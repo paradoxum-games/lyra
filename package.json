@@ -1,30 +1,45 @@
 {
-  "name": "@paradoxum-games/lyra",
-  "version": "0.4.0",
-  "description": "A DataStoreService wrapper",
-  "scripts": {
-    "test": "exit 0",
-    "postversion": "git push && git push --tags"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/paradoxum-games/lyra.git"
-  },
-  "author": "nomer888",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/paradoxum-games/lyra/issues"
-  },
-  "homepage": "https://github.com/paradoxum-games/lyra#readme",
-  "files": [
-    "src/**/*",
-    "!src/**/__tests__/**/*",
-    "!src/**/*.spec.luau",
-    "!src/jest.config.luau",
-    "default.project.json"
-  ],
-  "dependencies": {
-    "@paradoxum-games/promise": "4.0.1",
-    "@paradoxum-games/t": "3.1.1"
-  }
+    "name": "@rbxts/lyra",
+    "version": "0.4.0",
+    "description": "A DataStoreService wrapper",
+    "scripts": {
+        "test": "exit 0",
+        "postversion": "git push && git push --tags"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/6ixfalls/rbxts-lyra.git"
+    },
+    "author": "nomer888",
+    "license": "ISC",
+    "bugs": {
+        "url": "https://github.com/6ixfalls/rbxts-lyra/issues"
+    },
+    "homepage": "https://github.com/6ixfalls/rbxts-lyra#readme",
+    "files": [
+        "src/**/*",
+        "!src/**/__tests__/**/*",
+        "!src/**/*.spec.{luau,ts}",
+        "!src/jest.config.luau",
+        "default.project.json"
+    ],
+    "dependencies": {
+        "@rbxts/t": "3.1.1"
+    },
+    "publishConfig": {
+        "access": "public"
+    },
+    "devDependencies": {
+        "@rbxts/compiler-types": "^3.0.0-types.0",
+        "@rbxts/types": "^1.0.813",
+        "@typescript-eslint/eslint-plugin": "^8.9.0",
+        "@typescript-eslint/parser": "^8.9.0",
+        "eslint": "^8.57.1",
+        "eslint-config-prettier": "^9.1.0",
+        "eslint-plugin-prettier": "^5.2.1",
+        "eslint-plugin-roblox-ts": "^0.0.36",
+        "prettier": "^3.3.3",
+        "roblox-ts": "^3.0.0",
+        "typescript": "^5.6.3"
+    }
 }

@@ -1,7 +1,6 @@
 --!strict
 
 local HttpService = game:GetService("HttpService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Constants = require(script.Parent.Constants)
 local Files = require(script.Parent.Files)
@@ -10,7 +9,7 @@ local Migrations = require(script.Parent.Migrations)
 local PromiseQueue = require(script.Parent.PromiseQueue)
 local Promise = require(script.Parent.Promise)
 local Tables = require(script.Parent.Tables)
-local t = require(ReplicatedStorage.Packages.t)
+local t = require(script.Parent.Parent:WaitForChild("t").lib.ts)
 local Types = require(script.Parent.Types)
 local Transactions = require(script.Parent.Transactions)
 local dataStoreRetry = require(script.Parent.dataStoreRetry)

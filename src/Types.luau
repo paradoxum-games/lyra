@@ -6,9 +6,7 @@
 	@class Types
 ]=]
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local t = require(ReplicatedStorage.Packages.t)
+local t = require(script.Parent.Parent:WaitForChild("t").lib.ts)
 
 export type PatchOperation =
 	{ op: "add", path: string, value: any }

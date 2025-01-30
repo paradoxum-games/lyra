@@ -1,6 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Promise = require(ReplicatedStorage.Packages.Promise)
+local Promise = require(script.Parent.Parent:WaitForChild("Promise"))
 
 export type Status = "Started" | "Resolved" | "Rejected" | "Cancelled"
 
