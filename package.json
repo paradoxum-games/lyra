@@ -5,8 +5,7 @@
     "types": "src/index.d.ts",
     "description": "A DataStoreService wrapper",
     "scripts": {
-        "test": "exit 0",
-        "postversion": "git push && git push --tags"
+        "test": "exit 0"
     },
     "repository": {
         "type": "git",
