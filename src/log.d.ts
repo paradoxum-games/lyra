@@ -6,11 +6,4 @@ export interface LogMessage {
 }
 
 // An enum value representing a log level.
-export enum LogLevel {
-    fatal = "fatal",
-    error = "error",
-    warn = "warn",
-    info = "info",
-    debug = "debug",
-    trace = "trace",
-}
+export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "trace";

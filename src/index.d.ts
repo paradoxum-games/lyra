@@ -42,3 +42,14 @@ declare namespace Lyra {
      */
     export function setLogLevel(level: LogLevel): void;
 }
+
+export type { LogLevel, LogMessage } from "./log";
+export { PlayerStore } from "./playerstore";
+export type { PlayerStoreConfig } from "./playerstore";
+export { Store } from "./store";
+export type { StoreConfig, MigrationStep } from "./store";
+export {
+    DataStoreService as MockDataStoreService,
+    MemoryStoreService as MockMemoryStoreService,
+} from "./mock";
+export default Lyra;

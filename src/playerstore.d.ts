@@ -1,4 +1,5 @@
 import { t } from "@rbxts/t";
+import { MemoryStoreService, DataStoreService } from "./mock";
 import { LogMessage } from "./log";
 import { MigrationChain } from "./store";
 
@@ -39,6 +40,17 @@ export interface PlayerStoreConfig<Schema> {
     memoryStoreService?: MemoryStoreService;
     // Optional DataStoreService instance for mocking
     dataStoreService?: DataStoreService;
+}
+
+export namespace PlayerStore {
+    /**
+     * Creates a player store.
+     *
+     * @param config The configuration for the player store.
+     */
+    export function create<Schema extends object>(
+        config: PlayerStoreConfig<Schema>
+    ): PlayerStore<Schema>;
 }
 
 export interface PlayerStore<Schema extends object> {
