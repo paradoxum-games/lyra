@@ -6,7 +6,7 @@
 	@class Types
 ]=]
 
-local t = require(script.Parent.Parent:WaitForChild("t").lib.ts)
+local t = require(script.Parent.Parent:WaitForChild("t").lib.ts).t
 
 export type PatchOperation =
 	{ op: "add", path: string, value: any }
