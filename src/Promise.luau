@@ -1,6 +1,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Promise = require(script.Parent.Parent:WaitForChild("Promise"))
+-- rbxts_include
+local Promise = require(script.Parent.Parent.Parent.Parent:WaitForChild("Promise"))
 
 export type Status = "Started" | "Resolved" | "Rejected" | "Cancelled"
 
