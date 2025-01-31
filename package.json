@@ -1,6 +1,8 @@
 {
     "name": "@rbxts/lyra",
     "version": "0.4.0",
+    "main": "src/init.luau",
+    "types": "src/index.d.ts",
     "description": "A DataStoreService wrapper",
     "scripts": {
         "test": "exit 0",
