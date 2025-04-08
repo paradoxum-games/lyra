@@ -120,7 +120,7 @@ local function enforceValueLimits(value: any)
 	end
 
 	local success, encoded = pcall(function()
-		return game:GetService("HttpService"):JSONEncode(value)
+		return HttpService:JSONEncode(value)
 	end)
 
 	if not success then
