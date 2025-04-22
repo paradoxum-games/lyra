@@ -13,6 +13,8 @@
 
 </div>
 
+The `@rbxts/lyra` module is not maintained by `paradoxum-games` and is a personally maintained fork by @6ixfalls.
+
 Lyra makes it easy to safely and robustly manage your game's player data. It's designed to handle large amounts of data, prevent common game-breaking bugs, and make it easy to update your data format without breaking existing saves.
 
 ## Early Development
@@ -68,6 +70,48 @@ store:txAsync({player1, player2}, function(state)
     state[player2].coins += amount
     return true
 end)
+```
+TS examples
+```ts
+import { t } from "@rbxts/t";
+import Lyra from "@rbxts/lyra";
+import { Players } from "@rbxts/services";
+
+const store = Lyra.createPlayerStore({
+    name: "PlayerData",
+    template: {
+        coins: 0,
+        inventory: {},
+    },
+    schema: t.strictInterface({
+        coins: t.number,
+        inventory: t.table,
+    }),
+});
+
+// Load data when players join
+Players.PlayerAdded.Connect((player) => {
+    store.loadAsync(player);
+});
+
+// Free up resources when players leave
+Players.PlayerRemoving.Connect((player) => {
+    store.unloadAsync(player);
+});
+
+// Update data
+store.updateAsync(player, (data) => {
+    data.coins += 100;
+    return true;
+});
+
+// Atomic transactions
+store.txAsync([player1, player2], (state) => {
+    const amount = 50;
+    state.get(player1).coins -= amount;
+    state.get(player2).coins += amount;
+    return true;
+});
 ```
 
 ## Installation

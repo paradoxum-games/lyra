@@ -1,6 +1,4 @@
-import { t } from "@rbxts/t";
-import { MemoryStoreService, DataStoreService } from "./mock";
-import { LogMessage } from "./log";
+import { BaseStoreConfig } from "./sharedstore";
 
 type MigrationChain<ValidatedData> = MigrationStep<any, any>[];
 
@@ -30,7 +28,7 @@ export interface MigrationStep<Argument, ReturnValue> {
 	.importLegacyData? (key: string) -> any? -- Function to import legacy data
 	.dataStoreService? DataStoreService -- Custom DataStore implementation
 	.useMock? boolean -- Use mock DataStore (Studio only)
-	.changedCallbacks? { (key: string, newData: T, oldData: T?) -> () -> () } -- Run when data changes
+	.changedCallbacks? { (key: string, newData: T, oldData: T?) -> () } -- Run when data changes
 	.logCallback? (logMessage: LogMessage) -> () -- Custom logging function
 	.onLockLost? (key: string) -> () -- Called if DataStore lock is lost
 
@@ -48,33 +46,11 @@ export interface MigrationStep<Argument, ReturnValue> {
 	}
 	```
  */
-export interface StoreConfig<Schema> {
-    // The name of the store
-    name: string;
-    // The template data for new keys
-    template: NoInfer<Schema>;
-    // A function to validate data
-    schema: t.check<Schema>;
-    // Optional migration steps
-    migrationSteps?: MigrationChain<NoInfer<Schema>>;
-    // Optional function to import legacy data
-    importLegacyData?: (key: string) => any | undefined;
-    // Optional callbacks for data changes
-    changedCallbacks?: ((
-        key: string,
-        newData: Schema,
-        oldData?: Schema
-    ) => () => void)[];
-    // Optional callback for log messages
-    logCallback?: (logMessage: LogMessage) => void;
+export interface StoreConfig<Schema> extends BaseStoreConfig<Schema> {
     // Optional function to call if the DataStore lock is lost
     onLockLost?: (key: string) => void;
     // Use a mock DataStore (Studio only)
     useMock?: boolean;
-    // Optional MemoryStoreService instance for mocking
-    memoryStoreService?: MemoryStoreService;
-    // Optional DataStoreService instance for mocking
-    dataStoreService?: DataStoreService;
 }
 
 export namespace Store {
