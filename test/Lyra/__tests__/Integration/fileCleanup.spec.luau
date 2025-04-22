@@ -14,7 +14,7 @@ local beforeEach = JestGlobals.beforeEach
 local afterEach = JestGlobals.afterEach
 local jest = JestGlobals.jest
 
-describe("Store", function()
+describe("File Cleanup", function()
 	local Store
 
 	local mockData
@@ -39,22 +39,12 @@ describe("Store", function()
 		return Store.createStore(config)
 	end
 
-	local function crash()
-		local snap = MockDataStoreService.snapshot(mockData)
-		for _ = 1, 5 do
-			jest.advanceTimersByTime(1000)
-		end
-		mockData = MockDataStoreService.new()
-		mockMemory = MockMemoryStoreService.new()
-		store = makeStore()
-		MockDataStoreService.restore(mockData, snap)
-	end
-
 	beforeEach(function()
+		jest.useFakeTimers()
 		local realConstants = jest.requireActual(ReplicatedStorage.Packages.Lyra.Constants)
 		jest.mock(ReplicatedStorage.Packages.Lyra.Constants, function()
 			return Tables.mergeShallow(realConstants, {
-				MAX_CHUNK_SIZE = 50,
+				MAX_CHUNK_SIZE = 15,
 			})
 		end)
 
@@ -64,8 +54,6 @@ describe("Store", function()
 		mockMemory = MockMemoryStoreService.new()
 
 		store = makeStore()
-
-		jest.useFakeTimers()
 	end)
 
 	afterEach(function()
@@ -73,133 +61,127 @@ describe("Store", function()
 		jest.useRealTimers()
 	end)
 
-	describe("Partial Write / Orphaned File Creation", function()
-		it.skip("clean up file partial write failure", function()
-			-- 1) Trigger a large file write so multiple shards are created
-			-- 2) Simulate a partial or failed write that leaves behind shards
-			--    (some logic that triggers a mid-write crash or error)
-			-- 3) Confirm store now has an orphaned file in its session or gets queued
-			--    for cleanup behind the scenes
-			-- 4) Advance timers in increments to simulate time passing
-			-- 5) Expect that the orphaned shards eventually disappear from mockData
-			--    (the queue cleans them up)
-			-- 6) Validate no error is thrown, and store no longer sees the orphaned file
-			store:load("player1")
-			jest.advanceTimersByTime(1000)
+	it("clean up file partial write failure", function()
+		store:load("player1")
+		jest.advanceTimersByTime(1000)
 
-			store:update("player1", function(data)
-				data.coins = 100
-				return true
-			end)
-
-			local setMock, realSet = MockDataStoreService.mockStoreMethod(mockData, "SetAsync", jest)
-			setMock
-				.mockImplementation(function()
-					print("aaaa")
-					error("fake error", 0)
-				end)
-				.mockImplementationOnce(realSet)
-
-			local save1 = store:save("player1")
-			jest.advanceTimersByTime(1000)
-
-			setMock.mockImplementation(realSet)
-			store:unload("player1")
-			jest.advanceTimersByTime(1000)
-
-			local removeMock = MockDataStoreService.mockStoreMethod(mockData, "RemoveAsync", jest)
-			jest.advanceTimersByTime(100000)
-
-			expect(removeMock).toBeCalledTimes(1)
+		store:update("player1", function(data)
+			data.coins = 100
+			return true
 		end)
 
-		it.todo("verify partial shards exist before cleanup")
-		it.todo("verify shards are removed from DataStore after processing")
+		MockDataStoreService.queueError(mockData, "SetAsync", "fake error")
+		local removeMock = MockDataStoreService.mockStoreMethod(mockData, "RemoveAsync", jest)
 
-		it("should handle concurrent writes leaving multiple orphaned files", function()
-			-- 1) Kick off multiple large writes in parallel on different keys
-			-- 2) Force partial completion on some
-			-- 3) Wait for the queue to process
-			-- 4) Ensure all orphaned shards are eventually removed
+		local saveRejected = false
+		store:unload("player1"):catch(function()
+			saveRejected = true
 		end)
-		it.todo("check queue is processing each file eventually")
-		it.todo("verify store can still load/unload or do normal operations while cleanup runs")
+
+		jest.advanceTimersByTime(1000)
+
+		expect(saveRejected).toBe(true)
+		expect(removeMock).toBeCalled()
+
+		store:load("player1")
+		jest.advanceTimersByTime(1000)
+
+		local getP = store:get("player1")
+		jest.advanceTimersByTime(1000)
+
+		return expect(getP).resolves.toEqual({ coins = 0, inventory = {} })
 	end)
 
-	describe("Budget Issues During Cleanup", function()
-		it("should retry orphan file cleanup if the request budget is insufficient at first", function()
-			-- 1) Force the budget to be artificially low (in your MockDataStore, perhaps set the
-			--    getRequestBudgetForRequestType(...) to return a small or zero value)
-			-- 2) Mark an orphaned file so OrphanedFileQueue tries to remove shards
-			-- 3) Confirm that the removal fails initially (the queue logs debug, or you can detect it from store logs)
-			-- 4) Then "restore" the budget and advance timers so the queue tries again
-			-- 5) Confirm that the shards are successfully cleaned up on retry
+	it("clean up file multiple partial write failures", function()
+		store:load("player1")
+		store:load("player2")
+		store:load("player3")
+		jest.advanceTimersByTime(1000)
+
+		store:update("player1", function(data)
+			data.coins = 100
+			return true
 		end)
-		it.todo("simulate multiple attempts until budget is sufficient")
+		store:update("player2", function(data)
+			data.coins = 100
+			return true
+		end)
+		store:update("player3", function(data)
+			data.coins = 100
+			return true
+		end)
+
+		local setMock, realSet = MockDataStoreService.mockStoreMethod(mockData, "SetAsync", jest)
+		setMock.mockImplementation(function(self, key, ...)
+			if key:match("%-%d+$") then
+				MockDataStoreService.queueError(mockData, "SetAsync", "fake error")
+			end
+			return realSet(self, key, ...)
+		end)
+		local removeMock = MockDataStoreService.mockStoreMethod(mockData, "RemoveAsync", jest)
+
+		local savesRejected = 0
+		store:unload("player1"):catch(function()
+			savesRejected += 1
+		end)
+		store:unload("player2"):catch(function()
+			savesRejected += 1
+		end)
+		store:unload("player3"):catch(function()
+			savesRejected += 1
+		end)
+
+		jest.advanceTimersByTime(1000)
+
+		expect(savesRejected).toBe(3)
+		expect(removeMock).toBeCalled()
 	end)
 
-	describe("Store Closure and Orphaned Files", function()
-		it("should complete orphaned-file cleanup before store:close() resolves if cleanup is in progress", function()
-			-- 1) Start a partial write that orphans some files
-			-- 2) Immediately call store:close()
-			-- 3) Advance timers
-			-- 4) The store:close() promise should not resolve until cleanup finishes,
-			--    or it might reject with errors if something goes wrong
-		end)
-		it.todo("ensure store:close waits for queue processing to finish or is robust to errors")
+	it("should retry orphan file cleanup if the request budget is insufficient at first", function()
+		store:load("player1")
+		jest.advanceTimersByTime(1000)
 
-		it("should not process new orphaned files after store is closed", function()
-			-- 1) Orphan some files
-			-- 2) Wait for partial cleanup
-			-- 3) Close the store
-			-- 4) Attempt to orphan more files (somehow, though the store is closed—maybe it's a no-op)
-			-- 5) Confirm new orphaned files do NOT get processed
+		store:update("player1", function(data)
+			data.coins = 100
+			return true
 		end)
-		it.todo("check that any queue attempt after closure is a no-op or logs a warning")
+
+		MockDataStoreService.setRequestBudget(mockData, "SetAsync", 1)
+		MockDataStoreService.queueError(mockData, "SetAsync", "fake error")
+		local removeMock = MockDataStoreService.mockStoreMethod(mockData, "RemoveAsync", jest)
+
+		store:unload("player1"):catch(function() end)
+		jest.advanceTimersByTime(1000)
+
+		expect(removeMock).toBeCalledTimes(0)
+
+		MockDataStoreService.setRequestBudget(mockData, "SetAsync", 100)
+		jest.advanceTimersByTime(1000)
+
+		expect(removeMock).toBeCalled()
 	end)
 
-	describe("Crash & Recovery Scenarios", function()
-		it("should resume cleanup after a crash+restore when partially through removing shards", function()
-			-- 1) Orphan multiple large-file shards
-			-- 2) Wait so that the queue is mid-processing (some shards removed, some not)
-			-- 3) Simulate a 'crash' by snapshot/restore the mockData
-			-- 4) Recreate the store, advance timers
-			-- 5) Confirm eventually all shards from the old orphan are removed
-		end)
-		it.todo("ensure partial progress doesn't break the next store instance's queue logic")
-	end)
+	it("should clean up old file after successful write of new file", function()
+		store:load("player1")
+		jest.advanceTimersByTime(1000)
 
-	describe("Transactions with Large Files", function()
-		it("should handle orphaned files from a multi-key transaction that partially commits some shards", function()
-			-- 1) Load multiple keys, each with large data
-			-- 2) Perform a 'tx' that tries to update them (maybe we set a big new field on each key)
-			-- 3) Force an error halfway, leaving some shards orphaned
-			-- 4) Confirm the queue eventually cleans up leftover shards
-			-- 5) Confirm final data is correct for each key
+		store:update("player1", function(data)
+			data.coins = 100
+			return true
 		end)
-		it.todo("check that store data is consistent even if a partial transaction left shards orphaned")
-	end)
+		store:save("player1")
+		jest.advanceTimersByTime(1000)
 
-	describe("Edge-Case Validations", function()
-		it("should ignore already-removed shards and proceed without error", function()
-			-- If a shard gets removed externally or is missing for some reason,
-			-- the queue should skip or log but not crash.
-		end)
-		it.todo("verify no error if a shard is missing mid-cleanup")
+		local removeMock = MockDataStoreService.mockStoreMethod(mockData, "RemoveAsync", jest)
 
-		it("should not mistakenly remove shards from a newly-written file with the same shardId", function()
-			-- Possibly test the scenario if a new write reuses the same shardId
-			-- before cleanup finishes. Or you can confirm it doesn't happen with
-			-- some store-level ID logic. If it's a known edge case, test that we
-			-- don't remove the 'new' file's shards incorrectly.
+		store:update("player1", function(data)
+			data.coins = 200
+			return true
 		end)
-		it.todo("verify store doesn't re-use shard IDs or incorrectly remove fresh shards")
+		store:save("player1")
+		jest.advanceTimersByTime(1000)
 
-		it("should properly handle cleaning up extremely large files (e.g., hundreds of shards)", function()
-			-- Stress test scenario with a high shard count
-			-- Ensure that repeated DataStore calls eventually remove all shards
-			-- We'll use `jest.advanceTimersByTime(...)` in a loop to confirm it eventually finishes
-		end)
-		it.todo("long-term stress test for high volume of shards in a single orphaned file")
+		expect(removeMock).toBeCalled()
+		expect(store:get("player1")).resolves.toEqual({ coins = 200, inventory = {} })
 	end)
 end)

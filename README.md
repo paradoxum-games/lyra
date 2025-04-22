@@ -74,7 +74,7 @@ end)
 
 Add to your `wally.toml`:
 ```toml
-Lyra = "paradoxum-games/lyra@0.4.0"
+Lyra = "paradoxum-games/lyra@0.4.1"
 ```
 
 Check out the [documentation](https://paradoxum-games.github.io/lyra/) for guides, examples, and API reference.

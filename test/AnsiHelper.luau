@@ -20,6 +20,12 @@ local BACKGROUND_COLOR_MAP = {
 	["[47m"] = Color3.fromRGB(240, 240, 239),
 }
 
+local MESSAGE_TYPE_COLORS = {
+	["[91m"] = "rgb(0,139,219)", -- blue
+	["[92m"] = "rgb(255,115,21)", -- orange
+	["[93m"] = "rgb(255,0,0)", -- red
+}
+
 local function defaultState()
 	return {
 		stack = {}, -- stack of styles (font/color/bold/etc)
@@ -226,6 +232,12 @@ local function applyCode(code, output, state)
 		elseif num == 49 then
 			-- Reset background
 			disableBackground(state)
+		elseif num == 91 then
+			enableStyle(state, output, "color", MESSAGE_TYPE_COLORS["[91m"])
+		elseif num == 92 then
+			enableStyle(state, output, "color", MESSAGE_TYPE_COLORS["[92m"])
+		elseif num == 93 then
+			enableStyle(state, output, "color", MESSAGE_TYPE_COLORS["[93m"])
 		end
 	end
 end

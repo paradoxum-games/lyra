@@ -3,15 +3,15 @@ local LogService = game:GetService("LogService")
 local AnsiHelper = require(script.Parent.AnsiHelper)
 
 local MESSAGE_TYPE_COLORS = {
-	[Enum.MessageType.MessageInfo] = "rgb(0, 139, 219)", -- blue
-	[Enum.MessageType.MessageWarning] = "rgb(255, 115, 21)", -- orange
-	[Enum.MessageType.MessageError] = "rgb(255,0,0)", -- red
+	[Enum.MessageType.MessageInfo] = "\27[91m",
+	[Enum.MessageType.MessageWarning] = "\27[92m",
+	[Enum.MessageType.MessageError] = "\27[93m",
 }
 
 local function colorMessageByType(message: string, messageType: Enum.MessageType): string
 	local color = MESSAGE_TYPE_COLORS[messageType]
 	if color then
-		return `<font color="{color}">{message}</font>`
+		return `{color}{message}\27[39m`
 	end
 	return message
 end

@@ -1,7 +1,7 @@
 [package]
 name = "paradoxum-games/lyra"
 description = "Advanced player data management with a simple API"
-version = "0.4.0"
+version = "0.4.1"
 license = "MIT"
 authors = ["nomer888"]
 realm = "shared"

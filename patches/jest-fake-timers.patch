@@ -8,13 +8,14 @@
  		time = targetTime,
  		callback = callback,
  		args = { ... },
-@@ -254,9 +255,18 @@
+@@ -254,10 +255,18 @@
  	return timeout
  end
  
 -local function fakeCancel(self, timeout)
 -	for i, timeout_ in self._timeouts do
 -		if timeout_ == timeout then
+-			table.remove(self._timeouts, i)
 +local function fakeCancel(self, timeoutOrThread)
 +	if typeof(timeoutOrThread) == "thread" then
 +		realTask.cancel(timeoutOrThread)
@@ -27,17 +28,20 @@
 +			timeout.callback = function() end
 +			timeout.args = {}
 +			timeout.time = self._mockTimeMs
- 			table.remove(self._timeouts, i)
  			break
  		end
-@@ -267,6 +277,12 @@
+ 	end
+@@ -266,7 +275,14 @@
+ local function fakeWait(self, timeToWait: number?)
  	local running = coroutine.running()
  	local clock = fakeClock(self)
- 	fakeDelay(self, timeToWait or 0, function()
+-	fakeDelay(self, timeToWait or 0, function()
++	local timeout
++	timeout = fakeDelay(self, timeToWait or 0, function()
 +		if coroutine.status(running) == "dead" then
 +			-- This was probably canceled by coroutine.close, which we don't
 +			-- mock. We can just treat it like task.cancel and return
-+			fakeCancel(self, running)
++			fakeCancel(self, timeout)
 +			return
 +		end
  		task.spawn(running, fakeClock(self) - clock)

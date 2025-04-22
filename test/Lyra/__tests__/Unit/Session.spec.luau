@@ -4,7 +4,6 @@ local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
 local Log = require(ReplicatedStorage.Packages.Lyra.Log)
 local MockDataStoreService = require(ReplicatedStorage.Packages.Lyra.MockDataStoreService)
 local MockMemoryStoreService = require(ReplicatedStorage.Packages.Lyra.MockMemoryStoreService)
-local OrphanedFileQueue = require(ReplicatedStorage.Packages.Lyra.OrphanedFileQueue)
 local Session = require(ReplicatedStorage.Packages.Lyra.Session)
 local Types = require(ReplicatedStorage.Packages.Lyra.Types)
 
@@ -50,7 +49,6 @@ describe("Session", function()
 			dataStoreService = mockData,
 			memoryStoreService = mockMemory,
 
-			orphanedFileQueue = OrphanedFileQueue.new(),
 			logger = Log.createLogger(function() end),
 			changedCallbacks = {},
 
@@ -182,6 +180,59 @@ describe("Session", function()
 				return true
 			end)
 			return expect(p).rejects.toEqual("Session is closed")
+		end)
+	end)
+
+	describe("changedCallbacks", function()
+		it("should call callbacks with nil oldData when data first loads", function()
+			local callbackMock, callbackFn = jest.fn()
+			ctx.changedCallbacks = { callbackFn }
+
+			getSession()
+			jest.advanceTimersByTime(1000)
+
+			expect(callbackMock).toHaveBeenCalledTimes(1)
+			expect(callbackMock).toHaveBeenCalledWith("player1", { coins = 0, inventory = {} }, nil)
+		end)
+
+		it("should call callbacks with previous data on subsequent updates", function()
+			local callbackMock, callbackFn = jest.fn()
+			ctx.changedCallbacks = { callbackFn }
+
+			local session = getSession()
+			jest.advanceTimersByTime(1000)
+			callbackMock.mockClear()
+
+			session:update(function(data)
+				data.coins = 100
+				return true
+			end)
+			jest.advanceTimersByTime(1000)
+
+			expect(callbackMock).toHaveBeenCalledTimes(1)
+			expect(callbackMock).toHaveBeenCalledWith(
+				"player1",
+				{ coins = 100, inventory = {} },
+				{ coins = 0, inventory = {} }
+			)
+		end)
+
+		it("should call multiple callbacks in order", function()
+			local order = {}
+			local callback1Mock, callback1Fn = jest.fn(function()
+				table.insert(order, 1)
+			end)
+			local callback2Mock, callback2Fn = jest.fn(function()
+				table.insert(order, 2)
+			end)
+			ctx.changedCallbacks = { callback1Fn, callback2Fn }
+
+			getSession()
+			jest.advanceTimersByTime(1000)
+
+			expect(callback1Mock).toHaveBeenCalledTimes(1)
+			expect(callback2Mock).toHaveBeenCalledTimes(1)
+			expect(order).toEqual({ 1, 2 })
 		end)
 	end)
 

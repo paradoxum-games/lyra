@@ -115,9 +115,7 @@ function PromiseQueue:_processQueue()
 					table.remove(self._queue, 1)
 				end
 
-				if coroutine.status(deadlockWarn) == "suspended" then
-					task.cancel(deadlockWarn)
-				end
+				task.cancel(deadlockWarn)
 			end)
 			:await()
 	end

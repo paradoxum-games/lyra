@@ -5,7 +5,7 @@
 		"ReplicatedStorage": {
 			"$className": "ReplicatedStorage",
 			"Packages": {
-				"$path": "node_modules/@paradoxum-games",
+				"$path": "Packages",
 				"Lyra": {
 					"$path": "src"
 				}

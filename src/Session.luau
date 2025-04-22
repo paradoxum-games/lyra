@@ -21,6 +21,7 @@ type SessionImpl<T> = {
 	load: (params: LoadSessionParams<T>) -> Promise.TPromise<Session<T>>,
 
 	updateRecord: (self: Session<T>) -> Promise.TPromise<any>,
+	orphanFile: (self: Session<T>, file: Types.File) -> (),
 	writeRecord: (self: Session<T>, txInfo: Types.TxInfo) -> Promise.TPromise<any>,
 
 	isSaved: (self: Session<T>) -> boolean,
@@ -120,7 +121,6 @@ local function load(params: LoadParams): any
 
 			if record.orphanedFiles then
 				orphanedFiles = record.orphanedFiles
-				ctx.orphanedFileQueue:markFiles(key, record.orphanedFiles)
 			end
 
 			local file = record.file
@@ -319,6 +319,10 @@ function Session.load<T>(params: LoadSessionParams<T>): Promise.TPromise<Session
 				session.unloadPromise = Promise.resolve()
 			end)
 
+			for _, file in loadResult.orphanedFiles do
+				session:orphanFile(file)
+			end
+
 			logger:log("trace", "loaded key", { data = loadResult.data })
 			session:mutateKey(loadResult.data)
 
@@ -349,16 +353,66 @@ function Session:updateRecord(): Promise.TPromise<any>
 	return self:writeRecord(txInfo)
 end
 
+function Session:orphanFile(file: Types.File): ()
+	if Files.isLargeFile(file) == false then
+		return
+	end
+	local logger = self.ctx.logger:extend({ method = "orphanFile", key = self.key, shard = file.shard })
+
+	logger:log("trace", "orphaning file", { file = file })
+	table.insert(self.orphanedFiles, file)
+
+	task.spawn(function()
+		while true do
+			local minBudget = 100
+			local curBudget =
+				self.ctx.dataStoreService:GetRequestBudgetForRequestType(Enum.DataStoreRequestType.SetIncrementAsync)
+			if curBudget < minBudget then
+				logger:log("debug", "insufficient budget", {
+					curBudget = curBudget,
+					minBudget = minBudget,
+				})
+				task.wait(1)
+			else
+				break
+			end
+		end
+
+		logger:log("debug", "processing orphaned file")
+
+		local promises = {}
+		for i = 1, file.count do
+			logger:log("trace", `Removing shard {i} of {file.count}`)
+			table.insert(
+				promises,
+				dataStoreRetry(function()
+					return self.ctx.shardStore:RemoveAsync(`{file.shard}-{i}`)
+				end)
+			)
+		end
+
+		Promise.all(promises)
+			:andThen(function()
+				logger:log("trace", "successfully removed shards")
+				for i, otherFile in self.orphanedFiles do
+					if Tables.equalsDeep(file, otherFile) then
+						table.remove(self.orphanedFiles, i)
+						break
+					end
+				end
+			end)
+			:catch(function(err)
+				logger:log("error", `failed to remove shards: {err}`)
+			end)
+			:finally(function()
+				logger:log("trace", "finished processing orphaned file")
+			end)
+	end)
+end
+
 function Session:writeRecord(txInfo: Types.TxInfo): Promise.TPromise<any>
 	local logger = self.logger:extend({ method = "writeRecord" })
 	logger:log("trace", "writeRecord called")
-
-	local function orphanFile(file: Types.File?)
-		if file ~= nil and Files.isLargeFile(file) then
-			table.insert(self.orphanedFiles, file)
-			self.ctx.orphanedFileQueue:markFile(self.key, file)
-		end
-	end
 
 	local writeParams: Files.WriteParams = {
 		store = self.ctx.shardStore,
@@ -374,7 +428,7 @@ function Session:writeRecord(txInfo: Types.TxInfo): Promise.TPromise<any>
 		:catch(function(err: Files.WriteError)
 			logger:log("error", "failed to write shards", { error = err.error })
 
-			orphanFile(err.file)
+			self:orphanFile(err.file)
 
 			return Promise.reject(err.error)
 		end)
@@ -383,7 +437,7 @@ function Session:writeRecord(txInfo: Types.TxInfo): Promise.TPromise<any>
 
 			if not self.lockHandle.isLocked() then
 				logger:log("error", "lock was lost while writing file")
-				orphanFile(file)
+				self:orphanFile(file)
 				return Promise.reject("lock was lost while writing file")
 			end
 
@@ -403,7 +457,9 @@ function Session:writeRecord(txInfo: Types.TxInfo): Promise.TPromise<any>
 				:andThen(function()
 					logger:log("trace", "record written")
 
-					orphanFile(self.currentFile)
+					if self.currentFile then
+						self:orphanFile(self.currentFile)
+					end
 					self.currentFile = if Files.isLargeFile(file) then file else nil
 
 					return record
@@ -411,7 +467,7 @@ function Session:writeRecord(txInfo: Types.TxInfo): Promise.TPromise<any>
 				:catch(function(err)
 					logger:log("error", "failed to write record", { error = err })
 
-					orphanFile(file)
+					self:orphanFile(file)
 
 					return Promise.reject(err)
 				end)

@@ -3,11 +3,6 @@
 registry = "test"
 
 [[package]]
-name = "csqrl/sift"
-version = "0.0.8"
-dependencies = []
-
-[[package]]
 name = "evaera/promise"
 version = "4.0.0"
 dependencies = []
@@ -253,16 +248,11 @@ version = "1.2.6"
 dependencies = [["collections", "jsdotlua/collections@1.2.6"]]
 
 [[package]]
-name = "lukadev-0/typed-promise"
-version = "4.0.2"
-dependencies = [["Promise", "evaera/promise@4.0.0"]]
-
-[[package]]
 name = "osyrisrblx/t"
 version = "3.1.1"
 dependencies = []
 
 [[package]]
-name = "private/private"
-version = "0.1.0"
-dependencies = [["Promise", "lukadev-0/typed-promise@4.0.2"], ["Sift", "csqrl/sift@0.0.8"], ["t", "osyrisrblx/t@3.1.1"], ["Jest", "jsdotlua/jest@3.10.0"], ["JestGlobals", "jsdotlua/jest-globals@3.10.0"]]
+name = "paradoxum-games/lyra"
+version = "0.4.1"
+dependencies = [["Promise", "evaera/promise@4.0.0"], ["t", "osyrisrblx/t@3.1.1"], ["Jest", "jsdotlua/jest@3.10.0"], ["JestGlobals", "jsdotlua/jest-globals@3.10.0"]]

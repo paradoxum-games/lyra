@@ -48,7 +48,6 @@ local Session = require(script.Parent.Session)
 local Log = require(script.Parent.Log)
 local MockDataStoreService = require(script.Parent.MockDataStoreService)
 local MockMemoryStoreService = require(script.Parent.MockMemoryStoreService)
-local OrphanedFileQueue = require(script.Parent.OrphanedFileQueue)
 local PromiseQueue = require(script.Parent.PromiseQueue)
 local Transactions = require(script.Parent.Transactions)
 local Promise = require(script.Parent.Promise)
@@ -69,7 +68,7 @@ local noYield = require(script.Parent.noYield)
 	.importLegacyData? (key: string) -> any? -- Function to import legacy data
 	.dataStoreService? DataStoreService -- Custom DataStore implementation
 	.useMock? boolean -- Use mock DataStore (Studio only)
-	.changedCallbacks? { (key: string, newData: T, oldData: T?) -> () -> () } -- Run when data changes
+	.changedCallbacks? { (key: string, newData: T, oldData: T?) -> () } -- Run when data changes
 	.logCallback? (logMessage: LogMessage) -> () -- Custom logging function
 	.onLockLost? (key: string) -> () -- Called if DataStore lock is lost
 
@@ -97,7 +96,7 @@ export type StoreConfig<T> = {
 	importLegacyData: ((key: string) -> any?)?,
 	dataStoreService: DataStoreService?,
 	memoryStoreService: MemoryStoreService?,
-	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () }?,
+	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () }?,
 	logCallback: ((logMessage: Types.LogMessage) -> ())?,
 	onLockLost: ((key: string) -> ())?,
 	useMock: boolean?,
@@ -132,7 +131,6 @@ type ListVersionParams = {
 type StoreImpl<T> = {
 	__index: StoreImpl<T>,
 
-	_processOrphanedFile: (self: Store<T>, item: Types.OrphanedFileQueueItem) -> boolean,
 	_withSession: (self: Store<T>, key: string, callback: (session: Session.Session<any>) -> ()) -> Promise.Promise,
 	_getKeyInfo: (self: Store<T>, key: string) -> Promise.TPromise<DataStoreKeyInfo?>,
 
@@ -250,8 +248,6 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 	end
 	assert(memoryStoreService, "luau")
 
-	local orphanedFileQueue = OrphanedFileQueue.new()
-
 	local migrationSteps = config.migrationSteps or {}
 
 	local storeContext: Types.StoreContext<T> = {
@@ -265,7 +261,6 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		dataStoreService = dataStoreService,
 		memoryStoreService = memoryStoreService,
 
-		orphanedFileQueue = orphanedFileQueue,
 		changedCallbacks = config.changedCallbacks or {},
 		logger = logger,
 		onLockLost = config.onLockLost,
@@ -292,70 +287,8 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		_unloadPromises = {},
 	}, Store)
 
-	orphanedFileQueue.processQueueItem = function(item)
-		return self:_processOrphanedFile(item)
-	end
-
 	logger:log("trace", `created store`)
 	return self
-end
-
---[=[
-	Processes an orphaned file in the store's queue.
-
-	@within Store
-	@private
-]=]
-function Store:_processOrphanedFile(item: Types.OrphanedFileQueueItem): boolean
-	local logger = self._ctx.logger:extend({ method = "_processOrphanedFile", key = item.key, shard = item.file.shard })
-
-	local minBudget = 100
-	local curBudget =
-		self._ctx.dataStoreService:GetRequestBudgetForRequestType(Enum.DataStoreRequestType.SetIncrementAsync)
-	if curBudget < minBudget then
-		logger:log("debug", "insufficient budget", {
-			curBudget = curBudget,
-			minBudget = minBudget,
-		})
-		return false
-	end
-
-	logger:log("debug", "processing orphaned file")
-	item.beingProcessed = true
-
-	local promises = {}
-	for i = 1, item.file.count do
-		logger:log("trace", `Removing shard {i} of {item.file.count}`)
-		table.insert(
-			promises,
-			dataStoreRetry(function()
-				return self._ctx.shardStore:RemoveAsync(`{item.file.shard}-{i}`)
-			end)
-		)
-	end
-
-	Promise.all(promises)
-		:andThen(function()
-			logger:log("trace", "successfully removed shards")
-			local session = self._sessions[item.key]
-			if session then
-				for i, file in session.orphanedFiles do
-					if Tables.equalsDeep(file, item.file) then
-						table.remove(session.orphanedFiles, i)
-						break
-					end
-				end
-			end
-		end)
-		:catch(function(err)
-			logger:log("error", `failed to remove shards: {err}`)
-		end)
-		:finally(function()
-			logger:log("trace", "finished processing orphaned file")
-			item.beingProcessed = false
-		end)
-
-	return true
 end
 
 --[=[
@@ -434,6 +367,16 @@ function Store:load(key: string, userIds: { number }?): Promise.Promise
 	end)
 
 	self._loadPromises[key] = loadPromise
+
+	-- This chain does two things:
+	-- 1. finally: If loadPromise is already settled, its finally block might
+	--    run before the assignment above, leaving the promise in the table - so
+	--    we run finally here to ensure it's removed.
+	-- 2. catch: Some users might call load without handling rejections,
+	--    triggering unhandled rejection warnings. Since Lyra logs the root
+	--    error, we immediately mark the rejection as caught to silence the
+	--    warning. This *doesn't* consume the rejection; it still propagates to
+	--    the user.
 	loadPromise
 		:finally(function()
 			self._loadPromises[key] = nil

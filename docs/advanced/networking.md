@@ -22,6 +22,12 @@ local Network = require(ReplicatedStorage.Network)
 local function syncWithClient(key: string, newData, oldData)
     local player = Players:GetPlayerByUserId(tonumber(key))
     if not player then return end
+
+    if oldData == nil then
+        -- First time data is loaded
+        Network.PlayerData:FireClient(player, newData)
+        return
+    end
     
     -- Send only changed data
     local changes = {}

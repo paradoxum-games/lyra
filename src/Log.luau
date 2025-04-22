@@ -37,11 +37,17 @@ function Logger:log(level: Types.LogLevel, message: string, context: { [string]:
 		end
 	end
 
-	self._logCallback({
-		level = level,
-		message = message,
-		context = finalContext,
-	})
+	local ok, result = pcall(function()
+		self._logCallback({
+			level = level,
+			message = message,
+			context = finalContext,
+		})
+	end)
+
+	if not ok then
+		warn(`Error logging message: {result}`)
+	end
 end
 
 function Logger:extend(context: { [string]: any }): Types.Logger

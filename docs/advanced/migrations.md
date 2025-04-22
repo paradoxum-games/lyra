@@ -29,6 +29,40 @@ This means each migration runs exactly once per player, even if they join multip
 Migrations always run in the order they're defined. Once published, this order is permanent and should never be changed. In the snippet below, `addLevel` will always run after `addSettings`.
 :::
 
+## Adding New Fields
+
+When adding new fields to your data, follow these steps:
+
+1. Add the field to your template with its default value
+2. Add the field to your schema to define its type/validation
+3. Create a migration step using `addFields` to add it to existing data
+
+For example:
+```lua
+-- Step 1: Add to template
+local template = {
+    coins = 0,  -- Existing field
+    gems = 0,   -- New field
+}
+
+-- Step 2: Add to schema
+local schema = {
+    coins = t.number,
+    gems = t.number,  -- New field
+}
+
+-- Step 3: Add migration
+local store = Lyra.createPlayerStore({
+    template = template,
+    schema = schema,
+    migrationSteps = {
+        Lyra.MigrationStep.addFields("addGems", {
+            gems = 0,
+        }),
+    },
+})
+```
+
 ## Basic Migrations
 
 The simplest migration is adding new fields:
@@ -74,6 +108,33 @@ migrationSteps = {
         data.inventory = nil
         return data
     end),
+}
+```
+
+## Migration Return Values
+
+Each migration step must return data that will eventually match your schema after all migrations run. This means:
+
+- Intermediate migrations can return data in any format
+- The final state after all migrations must match your schema
+- Lyra validates the final data against your schema after all migrations complete
+
+For example, this is valid even though the intermediate state doesn't match the final schema:
+```lua
+migrationSteps = {
+    -- First migration returns data that doesn't match final schema
+    Lyra.MigrationStep.transform("step1", function(data)
+        return {
+            temporaryField = data.oldField,
+        }
+    }),
+    
+    -- Second migration transforms it to match schema
+    Lyra.MigrationStep.transform("step2", function(data)
+        return {
+            newField = data.temporaryField,
+        }
+    }),
 }
 ```
 

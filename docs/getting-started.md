@@ -11,7 +11,7 @@ Let's get Lyra set up in your game and cover the basics of saving player data.
 Add Lyra to your `wally.toml`:
 
 ```toml
-Lyra = "paradoxum-games/lyra@0.4.0"
+Lyra = "paradoxum-games/lyra@0.4.1"
 ```
 
 :::tip
@@ -170,7 +170,7 @@ local function processReceipt(receiptInfo)
             if table.find(data.purchaseHistory, receiptInfo.PurchaseId) then
                return false -- Prevent duplicate purchases
             end
-            table.insert(data.purchaseHistory, receiptInfo.PurchaseId, 1)
+            table.insert(data.purchaseHistory, 1, receiptInfo.PurchaseId)
             for i = 1000, #data.purchaseHistory do
                 data.purchaseHistory[i] = nil -- Remove old purchases
             end
