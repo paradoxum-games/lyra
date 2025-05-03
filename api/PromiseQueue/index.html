@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en" dir="ltr" class="plugin-moonwave plugin-id-moonwave" data-has-hydrated="false">
+<head>
+<meta charset="UTF-8">
+<meta name="generator" content="Docusaurus v3.7.0">
+<title data-rh="true">PromiseQueue | Lyra</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:url" content="https://paradoxum-games.github.io/lyra/api/PromiseQueue"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docusaurus_tag" content="default"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docsearch:docusaurus_tag" content="default"><meta data-rh="true" property="og:title" content="PromiseQueue | Lyra"><meta data-rh="true" name="description" content="Implements a queue that processes asynchronous operations (represented by functions
+returning Promises or synchronous functions) one at a time, ensuring serial execution.
+
+**Purpose:** Useful for scenarios where operations on a shared resource must not
+run concurrently to prevent race conditions or ensure logical order. For example,
+processing updates to a specific player&#x27;s data session.
+
+**Core Logic:**
+- Operations are added to the queue via the `add` method.
+- Each operation is wrapped in a `Promise`.
+- A single processing loop ([PromiseQueue:_processQueue]) runs as long as the queue is not empty.
+- The loop takes the next item, executes its associated function, and waits for
+  its Promise to resolve or reject before moving to the next item.
+- Includes timeout and deadlock detection for individual items.
+- Supports adding an operation atomically across multiple queues ([PromiseQueue:multiQueueAdd])."><meta data-rh="true" property="og:description" content="Implements a queue that processes asynchronous operations (represented by functions
+returning Promises or synchronous functions) one at a time, ensuring serial execution.
+
+**Purpose:** Useful for scenarios where operations on a shared resource must not
+run concurrently to prevent race conditions or ensure logical order. For example,
+processing updates to a specific player&#x27;s data session.
+
+**Core Logic:**
+- Operations are added to the queue via the `add` method.
+- Each operation is wrapped in a `Promise`.
+- A single processing loop ([PromiseQueue:_processQueue]) runs as long as the queue is not empty.
+- The loop takes the next item, executes its associated function, and waits for
+  its Promise to resolve or reject before moving to the next item.
+- Includes timeout and deadlock detection for individual items.
+- Supports adding an operation atomically across multiple queues ([PromiseQueue:multiQueueAdd])."><link data-rh="true" rel="canonical" href="https://paradoxum-games.github.io/lyra/api/PromiseQueue"><link data-rh="true" rel="alternate" href="https://paradoxum-games.github.io/lyra/api/PromiseQueue" hreflang="en"><link data-rh="true" rel="alternate" href="https://paradoxum-games.github.io/lyra/api/PromiseQueue" hreflang="x-default"><link rel="stylesheet" href="/lyra/assets/css/styles.f56ecc6a.css">
+<script src="/lyra/assets/js/runtime~main.4a9be780.js" defer="defer"></script>
+<script src="/lyra/assets/js/main.3498456b.js" defer="defer"></script>
+</head>
+<body class="navigation-with-keyboard">
+<script>!function(){function t(t){document.documentElement.setAttribute("data-theme",t)}var e=function(){try{return new URLSearchParams(window.location.search).get("docusaurus-theme")}catch(t){}}()||function(){try{return window.localStorage.getItem("theme")}catch(t){}}();null!==e?t(e):window.matchMedia("(prefers-color-scheme: dark)").matches?t("dark"):(window.matchMedia("(prefers-color-scheme: light)").matches,t("light"))}(),function(){try{const c=new URLSearchParams(window.location.search).entries();for(var[t,e]of c)if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}()</script><div id="__docusaurus"><div role="region" aria-label="Skip to main content"><a class="skipToContent_fXgn" href="#__docusaurus_skipToContent_fallback">Skip to main content</a></div><nav aria-label="Main" class="navbar navbar--fixed-top"><div class="navbar__inner"><div class="navbar__items"><button aria-label="Toggle navigation bar" aria-expanded="false" class="navbar__toggle clean-btn" type="button"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="2" d="M4 7h22M4 15h22M4 23h22"></path></svg></button><a class="navbar__brand" href="/lyra/"><b class="navbar__title text--truncate">Lyra</b></a><a class="navbar__item navbar__link" href="/lyra/docs/intro">Docs</a><a aria-current="page" class="navbar__item navbar__link navbar__link--active" href="/lyra/api/">API</a><a class="navbar__item navbar__link" href="/lyra/changelog">Changelog</a></div><div class="navbar__items navbar__items--right"><a href="https://wally.run/package/paradoxum-games/lyra" target="_blank" rel="noopener noreferrer" class="navbar__item navbar__link">Wally<svg width="13.5" height="13.5" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a><a href="https://github.com/paradoxum-games/lyra" target="_blank" rel="noopener noreferrer" class="navbar__item navbar__link">GitHub<svg width="13.5" height="13.5" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a><div class="toggle_vylO colorModeToggle_DEke"><button class="clean-btn toggleButton_gllP toggleButtonDisabled_aARS" type="button" disabled="" title="Switch between dark and light mode (currently light mode)" aria-label="Switch between dark and light mode (currently light mode)" aria-live="polite" aria-pressed="false"><svg viewBox="0 0 24 24" width="24" height="24" class="lightToggleIcon_pyhR"><path fill="currentColor" d="M12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35-3-3S10.35,9,12,9 M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5 S14.76,7,12,7L12,7z M2,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13l2,0c0.55,0,1-0.45,1-1 s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1C11.45,19,11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0 c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95 c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41 L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41 s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06 c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" class="darkToggleIcon_wfgR"><path fill="currentColor" d="M9.37,5.51C9.19,6.15,9.1,6.82,9.1,7.5c0,4.08,3.32,7.4,7.4,7.4c0.68,0,1.35-0.09,1.99-0.27C17.45,17.19,14.93,19,12,19 c-3.86,0-7-3.14-7-7C5,9.07,6.81,6.55,9.37,5.51z M12,3c-4.97,0-9,4.03-9,9s4.03,9,9,9s9-4.03,9-9c0-0.46-0.04-0.92-0.1-1.36 c-0.98,1.37-2.58,2.26-4.4,2.26c-2.98,0-5.4-2.42-5.4-5.4c0-1.81,0.89-3.42,2.26-4.4C12.92,3.04,12.46,3,12,3L12,3z"></path></svg></button></div><div class="navbarSearchContainer_Bca1"><div class="navbar__search"><span aria-label="expand searchbar" role="button" class="search-icon" tabindex="0"></span><input id="search_input_react" type="search" placeholder="Loading..." aria-label="Search" class="navbar__search-input search-bar" disabled=""></div></div></div></div><div role="presentation" class="navbar-sidebar__backdrop"></div></nav><div id="__docusaurus_skipToContent_fallback" class="main-wrapper mainWrapper_z2l0 docPageContainer_wNNk"><div class="docPage_Dpn1"><div class="docSidebarContainer_o_re"><div class="sidebar_njMd"><nav aria-label="Docs sidebar" class="menu thin-scrollbar menu_SIkG"><ul class="theme-doc-sidebar-menu menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/lyra/api/PlayerStore">​Player​Store</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/lyra/api/Lyra">​Lyra</a></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item"><div class="menu__list-item-collapsible"><a class="menu__link menu__link--sublist menu__link--sublist-caret menu__link--active" role="button" aria-expanded="true" href="/lyra/api/Store">Internal</a></div><ul style="display:block;overflow:visible;height:auto" class="menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/lyra/api/Store">​Store</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/lyra/api/Session">​Session</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/lyra/api/Locks">​Locks</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/lyra/api/Constants">​Constants</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/lyra/api/Files">​Files</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/lyra/api/Log">​Log</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link menu__link--active" aria-current="page" tabindex="0" href="/lyra/api/PromiseQueue">​Promise​Queue</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/lyra/api/Types">​Types</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/lyra/api/Transactions">​Transactions</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/lyra/api/Migrations">​Migrations</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/lyra/api/hashMapRetry">hash​Map​Retry</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/lyra/api/dataStoreRetry">data​Store​Retry</a></li></ul></li></ul></nav></div></div><main class="docMainContainer_HJE1"><div class="container padding-vert--lg"><div class="row"><div class="col docItemCol_MU3C"><div class="docItemContainer_Wv98"><article><div class="member_J0w1 markdown"><div class="tocCollapsible_ETCw theme-doc-toc-mobile tocMobile_oUs_"><button type="button" class="clean-btn tocCollapsibleButton_TO0P">On this page</button></div><header><h1 class="docTitle_mZRt" style="text-decoration:none"><span style="display:inline-block">Promise</span><span style="display:inline-block">Queue</span></h1><div class="luaClassTags_EipM"><span class="badge_Ba2I" style="color:#9b59b6"><span class="badgeTooltip_cWXP">This item is only intended to be used by the module&#x27;s authors.</span><span class="badgeToolTipTail_H9D_"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="#9b59b6" role="img" aria-label="This item is only intended to be used by the module&#x27;s authors."><path d="m49.2 36 14.3 12.7.1-.7c0-6.7-6.1-12.1-13.6-12.1l-.8.1z"></path><path d="M50 27.8c12.5 0 22.7 9 22.7 20.1 0 2.6-.6 5-1.6 7.3L84.4 67c6.9-5 12.3-11.6 15.6-19.1-7.9-17.6-27.3-30.1-50-30.1-6.4 0-12.5 1-18.1 2.8l9.8 8.6c2.6-.8 5.4-1.4 8.3-1.4zM4.5 16.9l10.4 9.2 2.1 1.8C9.5 33.1 3.5 40 0 48c7.9 17.7 27.3 30.2 50 30.2 7 0 13.8-1.2 19.9-3.4l1.9 1.7 13.3 11.7 5.8-5.1-80.6-71.3-5.8 5.1zm25.2 22.2 7 6.2c-.2.8-.3 1.8-.3 2.6C36.4 54.6 42.5 60 50 60c1 0 2-.2 3-.3l7 6.2c-3 1.3-6.4 2.1-10 2.1-12.5 0-22.7-9-22.7-20.1 0-3.1.9-6.1 2.4-8.8z"></path></svg> <!-- -->Private</span></span></div><label class="privateToggle_lmfE"><span class="privateCheckboxContainer_psRa"><input class="privateCheckboxInternal_IKP2" type="checkbox" name="checkbox"><span class="privateCheckboxControl_Ov8U"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="3" d="M4 11.91l5.37 5.37L19.79 5.59"></path></svg></span></span><span class="privateCheckboxLabel_Vmvs">Show Private</span></label><div>
+<p>
+  Implements a queue that processes asynchronous operations (represented by functions
+  returning Promises or synchronous functions) one at a time, ensuring serial execution.
+</p>
+<p>
+  <strong>Purpose:</strong> Useful for scenarios where operations on a shared resource must not
+  run concurrently to prevent race conditions or ensure logical order. For example,
+  processing updates to a specific player's data session.
+</p>
+<p><strong>Core Logic:</strong></p>
+<ul>
+  <li>Operations are added to the queue via the <code>add</code> method.</li>
+  <li>Each operation is wrapped in a <code>Promise</code>.</li>
+  <li>A single processing loop (<a href="/lyra/api/PromiseQueue#_processQueue">PromiseQueue:_processQueue</a>) runs as long as the queue is not empty.</li>
+  <li>
+    The loop takes the next item, executes its associated function, and waits for
+    its Promise to resolve or reject before moving to the next item.
+  </li>
+  <li>Includes timeout and deadlock detection for individual items.</li>
+  <li>Supports adding an operation atomically across multiple queues (<a href="/lyra/api/PromiseQueue#multiQueueAdd">PromiseQueue:multiQueueAdd</a>).</li>
+</ul>
+</div></header><h2 class="anchor anchorWithStickyNavbar_LWe7" id="types">Types<a href="#types" class="hash-link" aria-label="Direct link to Types" title="Direct link to Types">​</a></h2><div class="divider_rE5g"></div><h3 class="anchor anchorWithStickyNavbar_LWe7" id="CreatePromiseQueueParams"><code style="text-decoration:none">CreatePromiseQueueParams</code><a href="#CreatePromiseQueueParams" class="hash-link" aria-label="Direct link to CreatePromiseQueueParams" title="Direct link to CreatePromiseQueueParams">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/paradoxum-games/lyra/blob/main/src/PromiseQueue.luau#L94"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code class="purple_ieR2">interface</code> <code>CreatePromiseQueueParams<!-- --> <!-- -->{</code><div class="inset_uKQm"><div><code>logger<!-- -->: </code><code class="blue_P4bS">Log.Logger</code></div></div><code>}</code></div><div>
+<p>Parameters for creating a new PromiseQueue instance.</p>
+</div><h2 class="anchor anchorWithStickyNavbar_LWe7" id="functions">Functions<a href="#functions" class="hash-link" aria-label="Direct link to Functions" title="Direct link to Functions">​</a></h2><div class="divider_rE5g"></div><h3 class="anchor anchorWithStickyNavbar_LWe7" id="new"><code style="text-decoration:none">new</code><a href="#new" class="hash-link" aria-label="Direct link to new" title="Direct link to new">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/paradoxum-games/lyra/blob/main/src/PromiseQueue.luau#L104"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code>PromiseQueue<!-- -->.</code><code class="green_DgR4">new</code><code>(</code><div class="inset_uKQm"><div><code>params<!-- -->: </code><code class="blue_P4bS"><a style="text-decoration:underline;color:inherit" href="/lyra/api/PromiseQueue#CreatePromiseQueueParams">CreatePromiseQueueParams</a></code><span class="inlineDescription_G7Er">-- <span>
+<p>Configuration parameters.</p>
+</span></span></div></div><code>) → </code><code class="blue_P4bS"><a style="text-decoration:underline;color:inherit" href="/lyra/api/PromiseQueue">PromiseQueue</a></code><span class="inlineDescription_G7Er">-- <span>
+<p>A new PromiseQueue object.</p>
+</span></span></div><div>
+<p>Creates a new PromiseQueue instance.</p>
+</div><div class="divider_rE5g"></div><h3 class="anchor anchorWithStickyNavbar_LWe7" id="multiQueueAdd"><code style="text-decoration:none">multiQueueAdd</code><a href="#multiQueueAdd" class="hash-link" aria-label="Direct link to multiQueueAdd" title="Direct link to multiQueueAdd">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/paradoxum-games/lyra/blob/main/src/PromiseQueue.luau#L267"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code>PromiseQueue<!-- -->.</code><code class="green_DgR4">multiQueueAdd</code><code>(</code><div class="inset_uKQm"><div><code>queues<!-- -->: </code><code class="purple_ieR2">{</code><code class="blue_P4bS"><a style="text-decoration:underline;color:inherit" href="/lyra/api/PromiseQueue">PromiseQueue</a></code><code class="purple_ieR2">}</code><code>,</code><span class="inlineDescription_G7Er">-- <span>
+<p>A table array of PromiseQueue instances to coordinate.</p>
+</span></span></div><div><code>callback<!-- -->: </code><code class="purple_ieR2">(</code><code class="purple_ieR2">)</code><code class="purple_ieR2"> → </code><code class="purple_ieR2">(</code><code class="purple_ieR2">)</code><span class="inlineDescription_G7Er">-- <span>
+<p>The function to execute once all queues are ready.</p>
+</span></span></div></div><code>) → </code><code class="blue_P4bS">Promise</code><span class="inlineDescription_G7Er">-- <span>
+<p>A Promise that resolves/rejects with the result/error of the <code>callback</code>.</p>
+</span></span></div><div>
+<p>Atomically adds a callback function to be executed across multiple queues.</p>
+<p>
+  Ensures that the callback only runs when it has effectively acquired the "lock"
+  (become the currently processing item) on <em>all</em> specified queues simultaneously.
+  This is useful for operations that need to coordinate across multiple resources
+  managed by separate queues.
+</p>
+<p><strong>Mechanism:</strong></p>
+<ol>
+  <li>Uses <code>_addResumableBlock</code> to add a blocking item to each queue.</li>
+  <li>
+    Waits for all these blocking items to become active (i.e., all <code>_addResumableBlock</code>
+    promises resolve, returning their <code>resume</code> functions).
+  </li>
+  <li>Once all queues are blocked, executes the provided <code>callback</code>.</li>
+  <li>
+    After the <code>callback</code> finishes (successfully or with an error), calls all the
+    <code>resume</code> functions to unblock all the queues.
+  </li>
+</ol>
+</div><div class="divider_rE5g"></div><h3 class="anchor anchorWithStickyNavbar_LWe7" id="add"><code style="text-decoration:none">add</code><a href="#add" class="hash-link" aria-label="Direct link to add" title="Direct link to add">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/paradoxum-games/lyra/blob/main/src/PromiseQueue.luau#L122"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code>PromiseQueue<!-- -->:</code><code class="green_DgR4">add</code><code>(</code><div class="inset_uKQm"><div><code>callback<!-- -->: </code><code class="purple_ieR2">(</code><code class="purple_ieR2">)</code><code class="purple_ieR2"> → </code><code class="blue_P4bS">T</code><span class="inlineDescription_G7Er">-- <span>
+<p>The function to execute. This function can be synchronous or return a Promise. Its result or error will resolve/reject the Promise returned by this <code>add</code> call.</p>
+</span></span></div></div><code>) → </code><code class="blue_P4bS">Promise</code><code class="op_lSLc">&lt;</code><code class="blue_P4bS">T</code><code class="op_lSLc">&gt;</code><span class="inlineDescription_G7Er">-- <span>
+<p>A Promise that resolves or rejects with the result or error of the provided <code>callback</code> function once it's processed by the queue.</p>
+</span></span></div><div>
+<p>Adds a new operation (callback function) to the end of the queue.</p>
+<p>
+  The callback will be executed only after all preceding items in the queue
+  have completed.
+</p>
+</div></div></article></div><details><summary>Show raw api</summary><pre style="max-width:100%;white-space:pre-wrap">{
+    &quot;functions&quot;: [
+        {
+            &quot;name&quot;: &quot;new&quot;,
+            &quot;desc&quot;: &quot;Creates a new PromiseQueue instance.&quot;,
+            &quot;params&quot;: [
+                {
+                    &quot;name&quot;: &quot;params&quot;,
+                    &quot;desc&quot;: &quot;Configuration parameters.&quot;,
+                    &quot;lua_type&quot;: &quot;CreatePromiseQueueParams&quot;
+                }
+            ],
+            &quot;returns&quot;: [
+                {
+                    &quot;desc&quot;: &quot;A new PromiseQueue object.&quot;,
+                    &quot;lua_type&quot;: &quot;PromiseQueue&quot;
+                }
+            ],
+            &quot;function_type&quot;: &quot;static&quot;,
+            &quot;source&quot;: {
+                &quot;line&quot;: 104,
+                &quot;path&quot;: &quot;src/PromiseQueue.luau&quot;
+            }
+        },
+        {
+            &quot;name&quot;: &quot;add&quot;,
+            &quot;desc&quot;: &quot;Adds a new operation (callback function) to the end of the queue.\n\nThe callback will be executed only after all preceding items in the queue\nhave completed.&quot;,
+            &quot;params&quot;: [
+                {
+                    &quot;name&quot;: &quot;callback&quot;,
+                    &quot;desc&quot;: &quot;The function to execute. This function can be synchronous or return a Promise. Its result or error will resolve/reject the Promise returned by this `add` call.&quot;,
+                    &quot;lua_type&quot;: &quot;() -&gt; T&quot;
+                }
+            ],
+            &quot;returns&quot;: [
+                {
+                    &quot;desc&quot;: &quot;A Promise that resolves or rejects with the result or error of the provided `callback` function once it&#x27;s processed by the queue.&quot;,
+                    &quot;lua_type&quot;: &quot;Promise&lt;T&gt;&quot;
+                }
+            ],
+            &quot;function_type&quot;: &quot;method&quot;,
+            &quot;source&quot;: {
+                &quot;line&quot;: 122,
+                &quot;path&quot;: &quot;src/PromiseQueue.luau&quot;
+            }
+        },
+        {
+            &quot;name&quot;: &quot;_processQueue&quot;,
+            &quot;desc&quot;: &quot;Internal function that processes items from the queue sequentially.\nIt runs as long as there are items in the queue.&quot;,
+            &quot;params&quot;: [],
+            &quot;returns&quot;: [],
+            &quot;function_type&quot;: &quot;method&quot;,
+            &quot;private&quot;: true,
+            &quot;source&quot;: {
+                &quot;line&quot;: 164,
+                &quot;path&quot;: &quot;src/PromiseQueue.luau&quot;
+            }
+        },
+        {
+            &quot;name&quot;: &quot;addResumableBlock&quot;,
+            &quot;desc&quot;: &quot;Internal helper function used by `multiQueueAdd`.\nAdds a special \&quot;blocking\&quot; item to a single queue. This item&#x27;s function\nreturns a Promise that only resolves when an external `resume` function is called.\n`resume` is just a Promise resolver function - calling it unblocks the queue item.&quot;,
+            &quot;params&quot;: [
+                {
+                    &quot;name&quot;: &quot;queue&quot;,
+                    &quot;desc&quot;: &quot;The PromiseQueue instance to add the block to.&quot;,
+                    &quot;lua_type&quot;: &quot;PromiseQueue&quot;
+                }
+            ],
+            &quot;returns&quot;: [
+                {
+                    &quot;desc&quot;: &quot;A Promise that resolves with the `resume` function once the block becomes the active item in the queue.&quot;,
+                    &quot;lua_type&quot;: &quot;Promise&lt;() -&gt; ()&gt;&quot;
+                }
+            ],
+            &quot;function_type&quot;: &quot;static&quot;,
+            &quot;private&quot;: true,
+            &quot;source&quot;: {
+                &quot;line&quot;: 232,
+                &quot;path&quot;: &quot;src/PromiseQueue.luau&quot;
+            }
+        },
+        {
+            &quot;name&quot;: &quot;multiQueueAdd&quot;,
+            &quot;desc&quot;: &quot;Atomically adds a callback function to be executed across multiple queues.\n\nEnsures that the callback only runs when it has effectively acquired the \&quot;lock\&quot;\n(become the currently processing item) on *all* specified queues simultaneously.\nThis is useful for operations that need to coordinate across multiple resources\nmanaged by separate queues.\n\n**Mechanism:**\n1. Uses `_addResumableBlock` to add a blocking item to each queue.\n2. Waits for all these blocking items to become active (i.e., all `_addResumableBlock`\n   promises resolve, returning their `resume` functions).\n3. Once all queues are blocked, executes the provided `callback`.\n4. After the `callback` finishes (successfully or with an error), calls all the\n   `resume` functions to unblock all the queues.&quot;,
+            &quot;params&quot;: [
+                {
+                    &quot;name&quot;: &quot;queues&quot;,
+                    &quot;desc&quot;: &quot;A table array of PromiseQueue instances to coordinate.&quot;,
+                    &quot;lua_type&quot;: &quot;{ PromiseQueue }&quot;
+                },
+                {
+                    &quot;name&quot;: &quot;callback&quot;,
+                    &quot;desc&quot;: &quot;The function to execute once all queues are ready.&quot;,
+                    &quot;lua_type&quot;: &quot;() -&gt; ()&quot;
+                }
+            ],
+            &quot;returns&quot;: [
+                {
+                    &quot;desc&quot;: &quot;A Promise that resolves/rejects with the result/error of the `callback`.&quot;,
+                    &quot;lua_type&quot;: &quot;Promise&quot;
+                }
+            ],
+            &quot;function_type&quot;: &quot;static&quot;,
+            &quot;source&quot;: {
+                &quot;line&quot;: 267,
+                &quot;path&quot;: &quot;src/PromiseQueue.luau&quot;
+            }
+        },
+        {
+            &quot;name&quot;: &quot;_getLogContext&quot;,
+            &quot;desc&quot;: &quot;Internal helper to generate a context table for logging.&quot;,
+            &quot;params&quot;: [
+                {
+                    &quot;name&quot;: &quot;item&quot;,
+                    &quot;desc&quot;: &quot;(Optional) The QueueItem currently being processed.&quot;,
+                    &quot;lua_type&quot;: &quot;QueueItem?&quot;
+                }
+            ],
+            &quot;returns&quot;: [
+                {
+                    &quot;desc&quot;: &quot;A table containing common context fields like queue length and item ID.&quot;,
+                    &quot;lua_type&quot;: &quot;{ [string]: any }&quot;
+                }
+            ],
+            &quot;function_type&quot;: &quot;method&quot;,
+            &quot;private&quot;: true,
+            &quot;source&quot;: {
+                &quot;line&quot;: 297,
+                &quot;path&quot;: &quot;src/PromiseQueue.luau&quot;
+            }
+        }
+    ],
+    &quot;properties&quot;: [],
+    &quot;types&quot;: [
+        {
+            &quot;name&quot;: &quot;PromiseQueueImpl&quot;,
+            &quot;desc&quot;: &quot;Internal implementation details and methods for the PromiseQueue class.&quot;,
+            &quot;fields&quot;: [
+                {
+                    &quot;name&quot;: &quot;__index&quot;,
+                    &quot;lua_type&quot;: &quot;PromiseQueueImpl&quot;,
+                    &quot;desc&quot;: &quot;&quot;
+                },
+                {
+                    &quot;name&quot;: &quot;new&quot;,
+                    &quot;lua_type&quot;: &quot;(params: CreatePromiseQueueParams) -&gt; PromiseQueue&quot;,
+                    &quot;desc&quot;: &quot;&quot;
+                },
+                {
+                    &quot;name&quot;: &quot;_processQueue&quot;,
+                    &quot;lua_type&quot;: &quot;(self: PromiseQueue) -&gt; ()&quot;,
+                    &quot;desc&quot;: &quot;&quot;
+                },
+                {
+                    &quot;name&quot;: &quot;_addResumableBlock&quot;,
+                    &quot;lua_type&quot;: &quot;(queue: PromiseQueue) -&gt; Promise&lt;() -&gt; ()&gt;&quot;,
+                    &quot;desc&quot;: &quot;&quot;
+                },
+                {
+                    &quot;name&quot;: &quot;_getLogContext&quot;,
+                    &quot;lua_type&quot;: &quot;(self: PromiseQueue, item: QueueItem?) -&gt; { [string]: any }&quot;,
+                    &quot;desc&quot;: &quot;&quot;
+                },
+                {
+                    &quot;name&quot;: &quot;add&quot;,
+                    &quot;lua_type&quot;: &quot;(self: PromiseQueue, callback: () -&gt; ()) -&gt; Promise&quot;,
+                    &quot;desc&quot;: &quot;&quot;
+                },
+                {
+                    &quot;name&quot;: &quot;multiQueueAdd&quot;,
+                    &quot;lua_type&quot;: &quot;(queues: { PromiseQueue }, callback: () -&gt; ()) -&gt; Promise&quot;,
+                    &quot;desc&quot;: &quot;Public static method&quot;
+                }
+            ],
+            &quot;private&quot;: true,
+            &quot;source&quot;: {
+                &quot;line&quot;: 39,
+                &quot;path&quot;: &quot;src/PromiseQueue.luau&quot;
+            }
+        },
+        {
+            &quot;name&quot;: &quot;PromiseQueueProps&quot;,
+            &quot;desc&quot;: &quot;Internal properties stored within a PromiseQueue instance.&quot;,
+            &quot;fields&quot;: [
+                {
+                    &quot;name&quot;: &quot;_queue&quot;,
+                    &quot;lua_type&quot;: &quot;{ QueueItem }&quot;,
+                    &quot;desc&quot;: &quot;The actual queue holding items to be processed.&quot;
+                },
+                {
+                    &quot;name&quot;: &quot;_logger&quot;,
+                    &quot;lua_type&quot;: &quot;Log.Logger&quot;,
+                    &quot;desc&quot;: &quot;Logger instance for internal logging.&quot;
+                },
+                {
+                    &quot;name&quot;: &quot;_totalItemCount&quot;,
+                    &quot;lua_type&quot;: &quot;number&quot;,
+                    &quot;desc&quot;: &quot;Counter for assigning unique IDs to queue items.&quot;
+                }
+            ],
+            &quot;private&quot;: true,
+            &quot;source&quot;: {
+                &quot;line&quot;: 58,
+                &quot;path&quot;: &quot;src/PromiseQueue.luau&quot;
+            }
+        },
+        {
+            &quot;name&quot;: &quot;QueueItem&quot;,
+            &quot;desc&quot;: &quot;Represents a single item within the queue.&quot;,
+            &quot;fields&quot;: [
+                {
+                    &quot;name&quot;: &quot;id&quot;,
+                    &quot;lua_type&quot;: &quot;number&quot;,
+                    &quot;desc&quot;: &quot;Unique identifier for the item within this queue instance.&quot;
+                },
+                {
+                    &quot;name&quot;: &quot;fn&quot;,
+                    &quot;lua_type&quot;: &quot;() -&gt; ()&quot;,
+                    &quot;desc&quot;: &quot;The function to execute for this item. Can be sync or return a Promise.&quot;
+                },
+                {
+                    &quot;name&quot;: &quot;resolve&quot;,
+                    &quot;lua_type&quot;: &quot;(value: any) -&gt; ()&quot;,
+                    &quot;desc&quot;: &quot;The resolve function of the Promise returned by `add`.&quot;
+                },
+                {
+                    &quot;name&quot;: &quot;reject&quot;,
+                    &quot;lua_type&quot;: &quot;(error: any) -&gt; ()&quot;,
+                    &quot;desc&quot;: &quot;The reject function of the Promise returned by `add`.&quot;
+                },
+                {
+                    &quot;name&quot;: &quot;trace&quot;,
+                    &quot;lua_type&quot;: &quot;string&quot;,
+                    &quot;desc&quot;: &quot;Debug traceback captured when the item was added.&quot;
+                }
+            ],
+            &quot;private&quot;: true,
+            &quot;source&quot;: {
+                &quot;line&quot;: 75,
+                &quot;path&quot;: &quot;src/PromiseQueue.luau&quot;
+            }
+        },
+        {
+            &quot;name&quot;: &quot;CreatePromiseQueueParams&quot;,
+            &quot;desc&quot;: &quot;Parameters for creating a new PromiseQueue instance.&quot;,
+            &quot;fields&quot;: [
+                {
+                    &quot;name&quot;: &quot;logger&quot;,
+                    &quot;lua_type&quot;: &quot;Log.Logger&quot;,
+                    &quot;desc&quot;: &quot;&quot;
+                }
+            ],
+            &quot;source&quot;: {
+                &quot;line&quot;: 94,
+                &quot;path&quot;: &quot;src/PromiseQueue.luau&quot;
+            }
+        }
+    ],
+    &quot;name&quot;: &quot;PromiseQueue&quot;,
+    &quot;desc&quot;: &quot;Implements a queue that processes asynchronous operations (represented by functions\nreturning Promises or synchronous functions) one at a time, ensuring serial execution.\n\n**Purpose:** Useful for scenarios where operations on a shared resource must not\nrun concurrently to prevent race conditions or ensure logical order. For example,\nprocessing updates to a specific player&#x27;s data session.\n\n**Core Logic:**\n- Operations are added to the queue via the `add` method.\n- Each operation is wrapped in a `Promise`.\n- A single processing loop ([PromiseQueue:_processQueue]) runs as long as the queue is not empty.\n- The loop takes the next item, executes its associated function, and waits for\n  its Promise to resolve or reject before moving to the next item.\n- Includes timeout and deadlock detection for individual items.\n- Supports adding an operation atomically across multiple queues ([PromiseQueue:multiQueueAdd]).&quot;,
+    &quot;private&quot;: true,
+    &quot;source&quot;: {
+        &quot;line&quot;: 21,
+        &quot;path&quot;: &quot;src/PromiseQueue.luau&quot;
+    }
+}</pre></details></div><div class="col col--3"><div class="tableOfContents_bqdL thin-scrollbar"><ul class="table-of-contents table-of-contents__left-border"><li><a href="#types" class="table-of-contents__link toc-highlight">Types</a><ul><li><a href="#CreatePromiseQueueParams" class="table-of-contents__link toc-highlight">CreatePromiseQueueParams</a></li></ul></li><li><a href="#functions" class="table-of-contents__link toc-highlight">Functions</a><ul><li><a href="#add" class="table-of-contents__link toc-highlight">:add</a></li><li><a href="#multiQueueAdd" class="table-of-contents__link toc-highlight">.multiQueueAdd</a></li><li><a href="#new" class="table-of-contents__link toc-highlight">.new</a></li></ul></li></ul></div></div></div></div></main></div></div><footer class="footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="col footer__col"><div class="footer__title">Links</div><ul class="footer__items clean-list"><li class="footer__item"><a href="https://github.com/paradoxum-games/lyra" target="_blank" rel="noopener noreferrer" class="footer__link-item">GitHub<svg width="13.5" height="13.5" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a></li></ul></div></div><div class="footer__bottom text--center"><div class="footer__copyright">Built with Moonwave and Docusaurus</div></div></div></footer></div>
+</body>
+</html>

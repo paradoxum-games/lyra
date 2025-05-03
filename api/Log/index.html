@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en" dir="ltr" class="plugin-moonwave plugin-id-moonwave" data-has-hydrated="false">
+<head>
+<meta charset="UTF-8">
+<meta name="generator" content="Docusaurus v3.7.0">
+<title data-rh="true">Log | Lyra</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:url" content="https://paradoxum-games.github.io/lyra/api/Log"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docusaurus_tag" content="default"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docsearch:docusaurus_tag" content="default"><meta data-rh="true" property="og:title" content="Log | Lyra"><meta data-rh="true" name="description" content="Provides a structured logging implementation for the Lyra library.
+
+**Design:**
+- **Callback-based:** Instead of directly printing or sending logs, this module
+  uses a callback function (`logCallback`) provided during logger creation. This
+  allows the consuming application to decide how and where log messages are routed
+  (e.g., print to console, send to an external service, store in memory).
+- **Structured Context:** Log messages include a `context` table. Loggers can be
+  `extend`ed with additional context fields, which are automatically merged into
+  every subsequent log message created by that logger instance or its descendants.
+  This helps provide detailed, structured information for debugging and monitoring.
+- **Log Levels:** Supports standard log levels (`fatal`, `error`, `warn`, `info`,
+  `debug`, `trace`). A global log level can be set using `Log.setLevel` to filter
+  out messages below the desired severity.
+
+**Usage:**
+```lua
+local Log = require(script.Parent.Log)
+
+-- Set the global minimum log level (optional, defaults to &quot;info&quot;)
+Log.setLevel(&quot;debug&quot;)
+
+-- Create a logger instance with a callback
+local myLogger = Log.createLogger(function(logMessage)
+	print(`[{logMessage.level}] {logMessage.message}`, logMessage.context)
+end, { initialContext = &quot;value&quot; })
+
+-- Log messages
+myLogger:log(&quot;info&quot;, &quot;User logged in&quot;, { userId = 123 })
+
+-- Create a logger with extended context
+local sessionLogger = myLogger:extend({ sessionId = &quot;abc&quot; })
+sessionLogger:log(&quot;debug&quot;, &quot;Session data loaded&quot;)
+-- Output will include { initialContext = &quot;value&quot;, sessionId = &quot;abc&quot;, userId = 123 }
+-- if logged via myLogger, or { initialContext = &quot;value&quot;, sessionId = &quot;abc&quot; }
+-- if logged via sessionLogger.
+```"><meta data-rh="true" property="og:description" content="Provides a structured logging implementation for the Lyra library.
+
+**Design:**
+- **Callback-based:** Instead of directly printing or sending logs, this module
+  uses a callback function (`logCallback`) provided during logger creation. This
+  allows the consuming application to decide how and where log messages are routed
+  (e.g., print to console, send to an external service, store in memory).
+- **Structured Context:** Log messages include a `context` table. Loggers can be
+  `extend`ed with additional context fields, which are automatically merged into
+  every subsequent log message created by that logger instance or its descendants.
+  This helps provide detailed, structured information for debugging and monitoring.
+- **Log Levels:** Supports standard log levels (`fatal`, `error`, `warn`, `info`,
+  `debug`, `trace`). A global log level can be set using `Log.setLevel` to filter
+  out messages below the desired severity.
+
+**Usage:**
+```lua
+local Log = require(script.Parent.Log)
+
+-- Set the global minimum log level (optional, defaults to &quot;info&quot;)
+Log.setLevel(&quot;debug&quot;)
+
+-- Create a logger instance with a callback
+local myLogger = Log.createLogger(function(logMessage)
+	print(`[{logMessage.level}] {logMessage.message}`, logMessage.context)
+end, { initialContext = &quot;value&quot; })
+
+-- Log messages
+myLogger:log(&quot;info&quot;, &quot;User logged in&quot;, { userId = 123 })
+
+-- Create a logger with extended context
+local sessionLogger = myLogger:extend({ sessionId = &quot;abc&quot; })
+sessionLogger:log(&quot;debug&quot;, &quot;Session data loaded&quot;)
+-- Output will include { initialContext = &quot;value&quot;, sessionId = &quot;abc&quot;, userId = 123 }
+-- if logged via myLogger, or { initialContext = &quot;value&quot;, sessionId = &quot;abc&quot; }
+-- if logged via sessionLogger.
+```"><link data-rh="true" rel="canonical" href="https://paradoxum-games.github.io/lyra/api/Log"><link data-rh="true" rel="alternate" href="https://paradoxum-games.github.io/lyra/api/Log" hreflang="en"><link data-rh="true" rel="alternate" href="https://paradoxum-games.github.io/lyra/api/Log" hreflang="x-default"><link rel="stylesheet" href="/lyra/assets/css/styles.f56ecc6a.css">
+<script src="/lyra/assets/js/runtime~main.4a9be780.js" defer="defer"></script>
+<script src="/lyra/assets/js/main.3498456b.js" defer="defer"></script>
+</head>
+<body class="navigation-with-keyboard">
+<script>!function(){function t(t){document.documentElement.setAttribute("data-theme",t)}var e=function(){try{return new URLSearchParams(window.location.search).get("docusaurus-theme")}catch(t){}}()||function(){try{return window.localStorage.getItem("theme")}catch(t){}}();null!==e?t(e):window.matchMedia("(prefers-color-scheme: dark)").matches?t("dark"):(window.matchMedia("(prefers-color-scheme: light)").matches,t("light"))}(),function(){try{const c=new URLSearchParams(window.location.search).entries();for(var[t,e]of c)if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}()</script><div id="__docusaurus"><div role="region" aria-label="Skip to main content"><a class="skipToContent_fXgn" href="#__docusaurus_skipToContent_fallback">Skip to main content</a></div><nav aria-label="Main" class="navbar navbar--fixed-top"><div class="navbar__inner"><div class="navbar__items"><button aria-label="Toggle navigation bar" aria-expanded="false" class="navbar__toggle clean-btn" type="button"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="2" d="M4 7h22M4 15h22M4 23h22"></path></svg></button><a class="navbar__brand" href="/lyra/"><b class="navbar__title text--truncate">Lyra</b></a><a class="navbar__item navbar__link" href="/lyra/docs/intro">Docs</a><a aria-current="page" class="navbar__item navbar__link navbar__link--active" href="/lyra/api/">API</a><a class="navbar__item navbar__link" href="/lyra/changelog">Changelog</a></div><div class="navbar__items navbar__items--right"><a href="https://wally.run/package/paradoxum-games/lyra" target="_blank" rel="noopener noreferrer" class="navbar__item navbar__link">Wally<svg width="13.5" height="13.5" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a><a href="https://github.com/paradoxum-games/lyra" target="_blank" rel="noopener noreferrer" class="navbar__item navbar__link">GitHub<svg width="13.5" height="13.5" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a><div class="toggle_vylO colorModeToggle_DEke"><button class="clean-btn toggleButton_gllP toggleButtonDisabled_aARS" type="button" disabled="" title="Switch between dark and light mode (currently light mode)" aria-label="Switch between dark and light mode (currently light mode)" aria-live="polite" aria-pressed="false"><svg viewBox="0 0 24 24" width="24" height="24" class="lightToggleIcon_pyhR"><path fill="currentColor" d="M12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35-3-3S10.35,9,12,9 M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5 S14.76,7,12,7L12,7z M2,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13l2,0c0.55,0,1-0.45,1-1 s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1C11.45,19,11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0 c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95 c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41 L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41 s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06 c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" class="darkToggleIcon_wfgR"><path fill="currentColor" d="M9.37,5.51C9.19,6.15,9.1,6.82,9.1,7.5c0,4.08,3.32,7.4,7.4,7.4c0.68,0,1.35-0.09,1.99-0.27C17.45,17.19,14.93,19,12,19 c-3.86,0-7-3.14-7-7C5,9.07,6.81,6.55,9.37,5.51z M12,3c-4.97,0-9,4.03-9,9s4.03,9,9,9s9-4.03,9-9c0-0.46-0.04-0.92-0.1-1.36 c-0.98,1.37-2.58,2.26-4.4,2.26c-2.98,0-5.4-2.42-5.4-5.4c0-1.81,0.89-3.42,2.26-4.4C12.92,3.04,12.46,3,12,3L12,3z"></path></svg></button></div><div class="navbarSearchContainer_Bca1"><div class="navbar__search"><span aria-label="expand searchbar" role="button" class="search-icon" tabindex="0"></span><input id="search_input_react" type="search" placeholder="Loading..." aria-label="Search" class="navbar__search-input search-bar" disabled=""></div></div></div></div><div role="presentation" class="navbar-sidebar__backdrop"></div></nav><div id="__docusaurus_skipToContent_fallback" class="main-wrapper mainWrapper_z2l0 docPageContainer_wNNk"><div class="docPage_Dpn1"><div class="docSidebarContainer_o_re"><div class="sidebar_njMd"><nav aria-label="Docs sidebar" class="menu thin-scrollbar menu_SIkG"><ul class="theme-doc-sidebar-menu menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/lyra/api/PlayerStore">​Player​Store</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/lyra/api/Lyra">​Lyra</a></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item"><div class="menu__list-item-collapsible"><a class="menu__link menu__link--sublist menu__link--sublist-caret menu__link--active" role="button" aria-expanded="true" href="/lyra/api/Store">Internal</a></div><ul style="display:block;overflow:visible;height:auto" class="menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/lyra/api/Store">​Store</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/lyra/api/Session">​Session</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/lyra/api/Locks">​Locks</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/lyra/api/Constants">​Constants</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/lyra/api/Files">​Files</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link menu__link--active" aria-current="page" tabindex="0" href="/lyra/api/Log">​Log</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/lyra/api/PromiseQueue">​Promise​Queue</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/lyra/api/Types">​Types</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/lyra/api/Transactions">​Transactions</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/lyra/api/Migrations">​Migrations</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/lyra/api/hashMapRetry">hash​Map​Retry</a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/lyra/api/dataStoreRetry">data​Store​Retry</a></li></ul></li></ul></nav></div></div><main class="docMainContainer_HJE1"><div class="container padding-vert--lg"><div class="row"><div class="col docItemCol_MU3C"><div class="docItemContainer_Wv98"><article><div class="member_J0w1 markdown"><div class="tocCollapsible_ETCw theme-doc-toc-mobile tocMobile_oUs_"><button type="button" class="clean-btn tocCollapsibleButton_TO0P">On this page</button></div><header><h1 class="docTitle_mZRt" style="text-decoration:none"><span style="display:inline-block">Log</span></h1><div class="luaClassTags_EipM"><span class="badge_Ba2I" style="color:#9b59b6"><span class="badgeTooltip_cWXP">This item is only intended to be used by the module&#x27;s authors.</span><span class="badgeToolTipTail_H9D_"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="#9b59b6" role="img" aria-label="This item is only intended to be used by the module&#x27;s authors."><path d="m49.2 36 14.3 12.7.1-.7c0-6.7-6.1-12.1-13.6-12.1l-.8.1z"></path><path d="M50 27.8c12.5 0 22.7 9 22.7 20.1 0 2.6-.6 5-1.6 7.3L84.4 67c6.9-5 12.3-11.6 15.6-19.1-7.9-17.6-27.3-30.1-50-30.1-6.4 0-12.5 1-18.1 2.8l9.8 8.6c2.6-.8 5.4-1.4 8.3-1.4zM4.5 16.9l10.4 9.2 2.1 1.8C9.5 33.1 3.5 40 0 48c7.9 17.7 27.3 30.2 50 30.2 7 0 13.8-1.2 19.9-3.4l1.9 1.7 13.3 11.7 5.8-5.1-80.6-71.3-5.8 5.1zm25.2 22.2 7 6.2c-.2.8-.3 1.8-.3 2.6C36.4 54.6 42.5 60 50 60c1 0 2-.2 3-.3l7 6.2c-3 1.3-6.4 2.1-10 2.1-12.5 0-22.7-9-22.7-20.1 0-3.1.9-6.1 2.4-8.8z"></path></svg> <!-- -->Private</span></span></div><div>
+<p>Provides a structured logging implementation for the Lyra library.</p>
+<p><strong>Design:</strong></p>
+<ul>
+  <li>
+    <strong>Callback-based:</strong> Instead of directly printing or sending logs, this module
+    uses a callback function (<code>logCallback</code>) provided during logger creation. This
+    allows the consuming application to decide how and where log messages are routed
+    (e.g., print to console, send to an external service, store in memory).
+  </li>
+  <li>
+    <strong>Structured Context:</strong> Log messages include a <code>context</code> table. Loggers can be
+    <code>extend</code>ed with additional context fields, which are automatically merged into
+    every subsequent log message created by that logger instance or its descendants.
+    This helps provide detailed, structured information for debugging and monitoring.
+  </li>
+  <li>
+    <strong>Log Levels:</strong> Supports standard log levels (<code>fatal</code>, <code>error</code>, <code>warn</code>, <code>info</code>,
+    <code>debug</code>, <code>trace</code>). A global log level can be set using <code>Log.setLevel</code> to filter
+    out messages below the desired severity.
+  </li>
+</ul>
+<p><strong>Usage:</strong></p>
+<pre class="language-lua"><code class="language-lua"><span class="token keyword">local</span> Log <span class="token operator">=</span> <span class="token function">require</span><span class="token punctuation">(</span>script<span class="token punctuation">.</span>Parent<span class="token punctuation">.</span>Log<span class="token punctuation">)</span>
+
+<span class="token comment">-- Set the global minimum log level (optional, defaults to "info")</span>
+Log<span class="token punctuation">.</span><span class="token function">setLevel</span><span class="token punctuation">(</span><span class="token string">"debug"</span><span class="token punctuation">)</span>
+
+<span class="token comment">-- Create a logger instance with a callback</span>
+<span class="token keyword">local</span> myLogger <span class="token operator">=</span> Log<span class="token punctuation">.</span><span class="token function">createLogger</span><span class="token punctuation">(</span><span class="token keyword">function</span><span class="token punctuation">(</span>logMessage<span class="token punctuation">)</span>
+	<span class="token function">print</span><span class="token punctuation">(</span>`<span class="token punctuation">[</span><span class="token punctuation">{</span>logMessage<span class="token punctuation">.</span>level<span class="token punctuation">}</span><span class="token punctuation">]</span> <span class="token punctuation">{</span>logMessage<span class="token punctuation">.</span>message<span class="token punctuation">}</span>`<span class="token punctuation">,</span> logMessage<span class="token punctuation">.</span>context<span class="token punctuation">)</span>
+<span class="token keyword">end</span><span class="token punctuation">,</span> <span class="token punctuation">{</span> initialContext <span class="token operator">=</span> <span class="token string">"value"</span> <span class="token punctuation">}</span><span class="token punctuation">)</span>
+
+<span class="token comment">-- Log messages</span>
+myLogger<span class="token punctuation">:</span><span class="token function">log</span><span class="token punctuation">(</span><span class="token string">"info"</span><span class="token punctuation">,</span> <span class="token string">"User logged in"</span><span class="token punctuation">,</span> <span class="token punctuation">{</span> userId <span class="token operator">=</span> <span class="token number">123</span> <span class="token punctuation">}</span><span class="token punctuation">)</span>
+
+<span class="token comment">-- Create a logger with extended context</span>
+<span class="token keyword">local</span> sessionLogger <span class="token operator">=</span> myLogger<span class="token punctuation">:</span><span class="token function">extend</span><span class="token punctuation">(</span><span class="token punctuation">{</span> sessionId <span class="token operator">=</span> <span class="token string">"abc"</span> <span class="token punctuation">}</span><span class="token punctuation">)</span>
+sessionLogger<span class="token punctuation">:</span><span class="token function">log</span><span class="token punctuation">(</span><span class="token string">"debug"</span><span class="token punctuation">,</span> <span class="token string">"Session data loaded"</span><span class="token punctuation">)</span>
+<span class="token comment">-- Output will include { initialContext = "value", sessionId = "abc", userId = 123 }</span>
+<span class="token comment">-- if logged via myLogger, or { initialContext = "value", sessionId = "abc" }</span>
+<span class="token comment">-- if logged via sessionLogger.</span>
+</code></pre>
+</div></header><h2 class="anchor anchorWithStickyNavbar_LWe7" id="types">Types<a href="#types" class="hash-link" aria-label="Direct link to Types" title="Direct link to Types">​</a></h2><div class="divider_rE5g"></div><h3 class="anchor anchorWithStickyNavbar_LWe7" id="LogLevel"><code style="text-decoration:none">LogLevel</code><a href="#LogLevel" class="hash-link" aria-label="Direct link to LogLevel" title="Direct link to LogLevel">​</a></h3><span class="docTag__6UZ" style="border-color:#218c74;color:#218c74">enum</span><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/paradoxum-games/lyra/blob/main/src/Log.luau#L51"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code class="purple_ieR2">type</code> <code>LogLevel<!-- --> = </code> <code class="blue_P4bS">&quot;fatal&quot;</code><code class="op_lSLc"> | </code><code class="blue_P4bS">&quot;error&quot;</code><code class="op_lSLc"> | </code><code class="blue_P4bS">&quot;warn&quot;</code><code class="op_lSLc"> | </code><code class="blue_P4bS">&quot;info&quot;</code><code class="op_lSLc"> | </code><code class="blue_P4bS">&quot;debug&quot;</code><code class="op_lSLc"> | </code><code class="blue_P4bS">&quot;trace&quot;</code></div><div>
+<p>Represents the different log levels available for logging messages.</p>
+</div><div class="divider_rE5g"></div><h3 class="anchor anchorWithStickyNavbar_LWe7" id="LogMessage"><code style="text-decoration:none">LogMessage</code><a href="#LogMessage" class="hash-link" aria-label="Direct link to LogMessage" title="Direct link to LogMessage">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/paradoxum-games/lyra/blob/main/src/Log.luau#L62"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code class="purple_ieR2">interface</code> <code>LogMessage<!-- --> <!-- -->{</code><div class="inset_uKQm"><div><code>message<!-- -->: </code><code class="blue_P4bS">string</code><span class="inlineDescription_G7Er">-- <span>
+<p>The main content of the log message.</p>
+</span></span></div><div><code>level<!-- -->: </code><code class="blue_P4bS"><a style="text-decoration:underline;color:inherit" href="/lyra/api/Log#LogLevel">LogLevel</a></code><span class="inlineDescription_G7Er">-- <span>
+<p>The severity level of the message.</p>
+</span></span></div><div><code>context<!-- -->: </code><code class="purple_ieR2">{</code><span><code>[</code><code class="blue_P4bS">string</code><code>]</code></span><code>: </code><code class="blue_P4bS">any</code><code class="purple_ieR2">}</code><code class="blue_P4bS">?</code><span class="inlineDescription_G7Er">-- <span>
+<p>Optional table containing additional structured context.</p>
+</span></span></div></div><code>}</code></div><div>
+<p>Represents a log message sent to the logger's callback function.</p>
+</div><h2 class="anchor anchorWithStickyNavbar_LWe7" id="functions">Functions<a href="#functions" class="hash-link" aria-label="Direct link to Functions" title="Direct link to Functions">​</a></h2><div class="divider_rE5g"></div><h3 class="anchor anchorWithStickyNavbar_LWe7" id="setLevel"><code style="text-decoration:none">setLevel</code><a href="#setLevel" class="hash-link" aria-label="Direct link to setLevel" title="Direct link to setLevel">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/paradoxum-games/lyra/blob/main/src/Log.luau#L105"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code>Log<!-- -->.</code><code class="green_DgR4">setLevel</code><code>(</code><div class="inset_uKQm"><div><code>level<!-- -->: </code><code class="blue_P4bS"><a style="text-decoration:underline;color:inherit" href="/lyra/api/Log#LogLevel">LogLevel</a></code><span class="inlineDescription_G7Er">-- <span>
+<p>The minimum log level to allow.</p>
+</span></span></div></div><code>) → </code><code>(</code><code>)</code></div><div>
+<p>
+  Sets the global minimum log level.
+  Messages with a severity lower than this level will be ignored by all loggers.
+</p>
+</div><h3>Errors</h3><table class="errorTable_jfN8"><thead><tr><th>Type</th><th>Description</th></tr></thead><tbody><tr><td>string</td><td>Throws an error if the provided level is invalid.</td></tr></tbody></table><div class="divider_rE5g"></div><h3 class="anchor anchorWithStickyNavbar_LWe7" id="createLogger"><code style="text-decoration:none">createLogger</code><a href="#createLogger" class="hash-link" aria-label="Direct link to createLogger" title="Direct link to createLogger">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/paradoxum-games/lyra/blob/main/src/Log.luau#L189"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code>Log<!-- -->.</code><code class="green_DgR4">createLogger</code><code>(</code><div class="inset_uKQm"><div><code>logCallback<!-- -->: </code><code class="purple_ieR2">(</code><code>logMessage<!-- -->: </code><code class="blue_P4bS"><a style="text-decoration:underline;color:inherit" href="/lyra/api/Log#LogMessage">LogMessage</a></code><code class="purple_ieR2">)</code><code class="purple_ieR2"> → </code><code class="purple_ieR2">(</code><code class="purple_ieR2">)</code><code>,</code><span class="inlineDescription_G7Er">-- <span>
+<p>The function that will be called for each log message that passes the level filter. This function receives the complete <code>LogMessage</code> object including merged context.</p>
+</span></span></div><div><code>context<!-- -->: </code><code class="purple_ieR2">{</code><span><code>[</code><code class="blue_P4bS">string</code><code>]</code></span><code>: </code><code class="blue_P4bS">any</code><code class="purple_ieR2">}</code><code class="blue_P4bS">?</code><span class="inlineDescription_G7Er">-- <span>
+<p>Optional initial context for this logger.</p>
+</span></span></div></div><code>) → </code><code class="blue_P4bS">Logger</code><span class="inlineDescription_G7Er">-- <span>
+<p>A new Logger instance.</p>
+</span></span></div><div>
+<p>Factory function to create a new root Logger instance.</p>
+</div><div class="divider_rE5g"></div><h3 class="anchor anchorWithStickyNavbar_LWe7" id="log"><code style="text-decoration:none">log</code><a href="#log" class="hash-link" aria-label="Direct link to log" title="Direct link to log">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/paradoxum-games/lyra/blob/main/src/Log.luau#L127"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code>Log<!-- -->:</code><code class="green_DgR4">log</code><code>(</code><div class="inset_uKQm"><div><code>level<!-- -->: </code><code class="blue_P4bS"><a style="text-decoration:underline;color:inherit" href="/lyra/api/Log#LogLevel">LogLevel</a></code><code>,</code><span class="inlineDescription_G7Er">-- <span>
+<p>The severity level of the message.</p>
+</span></span></div><div><code>message<!-- -->: </code><code class="blue_P4bS">string</code><code>,</code><span class="inlineDescription_G7Er">-- <span>
+<p>The log message content.</p>
+</span></span></div><div><code>context<!-- -->: </code><code class="purple_ieR2">{</code><span><code>[</code><code class="blue_P4bS">string</code><code>]</code></span><code>: </code><code class="blue_P4bS">any</code><code class="purple_ieR2">}</code><code class="blue_P4bS">?</code><span class="inlineDescription_G7Er">-- <span>
+<p>Optional additional context specific to this log call.</p>
+</span></span></div></div><code>) → </code><code>(</code><code>)</code></div><div>
+<p>Logs a message if its level is at or above the globally set log level.</p>
+<p>
+  Merges the provided <code>context</code> table with the logger's persistent context
+  before calling the configured <code>_logCallback</code>.
+</p>
+</div><div class="divider_rE5g"></div><h3 class="anchor anchorWithStickyNavbar_LWe7" id="extend"><code style="text-decoration:none">extend</code><a href="#extend" class="hash-link" aria-label="Direct link to extend" title="Direct link to extend">​</a></h3><div class="repositoryDetailsContainer_BPdw"><a class="sourceButton_sEho" href="https://github.com/paradoxum-games/lyra/blob/main/src/Log.luau#L167"><div class="sourceButtonText_Vh0m">&lt;/&gt;</div></a></div><div class="memberString_GwaU"><code>Log<!-- -->:</code><code class="green_DgR4">extend</code><code>(</code><div class="inset_uKQm"><div><code>context<!-- -->: </code><code class="purple_ieR2">{</code><span><code>[</code><code class="blue_P4bS">string</code><code>]</code></span><code>: </code><code class="blue_P4bS">any</code><code class="purple_ieR2">}</code><span class="inlineDescription_G7Er">-- <span>
+<p>The additional context fields to add.</p>
+</span></span></div></div><code>) → </code><code class="blue_P4bS">Logger</code><span class="inlineDescription_G7Er">-- <span>
+<p>A new Logger instance with the extended context.</p>
+</span></span></div><div>
+<p>
+  Creates a new Logger instance that inherits the parent's callback
+  but has an extended context.
+</p>
+<p>
+  The new logger's context is a merged table containing the parent's context
+  and the additional <code>context</code> provided here.
+</p>
+</div></div></article></div><details><summary>Show raw api</summary><pre style="max-width:100%;white-space:pre-wrap">{
+    &quot;functions&quot;: [
+        {
+            &quot;name&quot;: &quot;setLevel&quot;,
+            &quot;desc&quot;: &quot;Sets the global minimum log level.\nMessages with a severity lower than this level will be ignored by all loggers.&quot;,
+            &quot;params&quot;: [
+                {
+                    &quot;name&quot;: &quot;level&quot;,
+                    &quot;desc&quot;: &quot;The minimum log level to allow.&quot;,
+                    &quot;lua_type&quot;: &quot;LogLevel&quot;
+                }
+            ],
+            &quot;returns&quot;: [],
+            &quot;function_type&quot;: &quot;static&quot;,
+            &quot;errors&quot;: [
+                {
+                    &quot;lua_type&quot;: &quot;string&quot;,
+                    &quot;desc&quot;: &quot;Throws an error if the provided level is invalid.&quot;
+                }
+            ],
+            &quot;source&quot;: {
+                &quot;line&quot;: 105,
+                &quot;path&quot;: &quot;src/Log.luau&quot;
+            }
+        },
+        {
+            &quot;name&quot;: &quot;log&quot;,
+            &quot;desc&quot;: &quot;Logs a message if its level is at or above the globally set log level.\n\nMerges the provided `context` table with the logger&#x27;s persistent context\nbefore calling the configured `_logCallback`.&quot;,
+            &quot;params&quot;: [
+                {
+                    &quot;name&quot;: &quot;level&quot;,
+                    &quot;desc&quot;: &quot;The severity level of the message.&quot;,
+                    &quot;lua_type&quot;: &quot;LogLevel&quot;
+                },
+                {
+                    &quot;name&quot;: &quot;message&quot;,
+                    &quot;desc&quot;: &quot;The log message content.&quot;,
+                    &quot;lua_type&quot;: &quot;string&quot;
+                },
+                {
+                    &quot;name&quot;: &quot;context&quot;,
+                    &quot;desc&quot;: &quot;Optional additional context specific to this log call.&quot;,
+                    &quot;lua_type&quot;: &quot;{ [string]: any }?&quot;
+                }
+            ],
+            &quot;returns&quot;: [],
+            &quot;function_type&quot;: &quot;method&quot;,
+            &quot;source&quot;: {
+                &quot;line&quot;: 127,
+                &quot;path&quot;: &quot;src/Log.luau&quot;
+            }
+        },
+        {
+            &quot;name&quot;: &quot;extend&quot;,
+            &quot;desc&quot;: &quot;Creates a new Logger instance that inherits the parent&#x27;s callback\nbut has an extended context.\n\nThe new logger&#x27;s context is a merged table containing the parent&#x27;s context\nand the additional `context` provided here.&quot;,
+            &quot;params&quot;: [
+                {
+                    &quot;name&quot;: &quot;context&quot;,
+                    &quot;desc&quot;: &quot;The additional context fields to add.&quot;,
+                    &quot;lua_type&quot;: &quot;{ [string]: any }&quot;
+                }
+            ],
+            &quot;returns&quot;: [
+                {
+                    &quot;desc&quot;: &quot;A new Logger instance with the extended context.&quot;,
+                    &quot;lua_type&quot;: &quot;Logger&quot;
+                }
+            ],
+            &quot;function_type&quot;: &quot;method&quot;,
+            &quot;source&quot;: {
+                &quot;line&quot;: 167,
+                &quot;path&quot;: &quot;src/Log.luau&quot;
+            }
+        },
+        {
+            &quot;name&quot;: &quot;createLogger&quot;,
+            &quot;desc&quot;: &quot;Factory function to create a new root Logger instance.&quot;,
+            &quot;params&quot;: [
+                {
+                    &quot;name&quot;: &quot;logCallback&quot;,
+                    &quot;desc&quot;: &quot;The function that will be called for each log message that passes the level filter. This function receives the complete `LogMessage` object including merged context.&quot;,
+                    &quot;lua_type&quot;: &quot;(logMessage: LogMessage) -&gt; ()&quot;
+                },
+                {
+                    &quot;name&quot;: &quot;context&quot;,
+                    &quot;desc&quot;: &quot;Optional initial context for this logger.&quot;,
+                    &quot;lua_type&quot;: &quot;{ [string]: any }?&quot;
+                }
+            ],
+            &quot;returns&quot;: [
+                {
+                    &quot;desc&quot;: &quot;A new Logger instance.&quot;,
+                    &quot;lua_type&quot;: &quot;Logger&quot;
+                }
+            ],
+            &quot;function_type&quot;: &quot;static&quot;,
+            &quot;source&quot;: {
+                &quot;line&quot;: 189,
+                &quot;path&quot;: &quot;src/Log.luau&quot;
+            }
+        }
+    ],
+    &quot;properties&quot;: [],
+    &quot;types&quot;: [
+        {
+            &quot;name&quot;: &quot;LogLevel&quot;,
+            &quot;desc&quot;: &quot;Represents the different log levels available for logging messages.&quot;,
+            &quot;lua_type&quot;: &quot;\&quot;fatal\&quot; | \&quot;error\&quot; | \&quot;warn\&quot; | \&quot;info\&quot; | \&quot;debug\&quot; | \&quot;trace\&quot;&quot;,
+            &quot;tags&quot;: [
+                &quot;enum&quot;
+            ],
+            &quot;source&quot;: {
+                &quot;line&quot;: 51,
+                &quot;path&quot;: &quot;src/Log.luau&quot;
+            }
+        },
+        {
+            &quot;name&quot;: &quot;LogMessage&quot;,
+            &quot;desc&quot;: &quot;Represents a log message sent to the logger&#x27;s callback function.&quot;,
+            &quot;fields&quot;: [
+                {
+                    &quot;name&quot;: &quot;message&quot;,
+                    &quot;lua_type&quot;: &quot;string&quot;,
+                    &quot;desc&quot;: &quot;The main content of the log message.&quot;
+                },
+                {
+                    &quot;name&quot;: &quot;level&quot;,
+                    &quot;lua_type&quot;: &quot;LogLevel&quot;,
+                    &quot;desc&quot;: &quot;The severity level of the message.&quot;
+                },
+                {
+                    &quot;name&quot;: &quot;context&quot;,
+                    &quot;lua_type&quot;: &quot;{ [string]: any }?&quot;,
+                    &quot;desc&quot;: &quot;Optional table containing additional structured context.&quot;
+                }
+            ],
+            &quot;source&quot;: {
+                &quot;line&quot;: 62,
+                &quot;path&quot;: &quot;src/Log.luau&quot;
+            }
+        }
+    ],
+    &quot;name&quot;: &quot;Log&quot;,
+    &quot;desc&quot;: &quot;Provides a structured logging implementation for the Lyra library.\n\n**Design:**\n- **Callback-based:** Instead of directly printing or sending logs, this module\n  uses a callback function (`logCallback`) provided during logger creation. This\n  allows the consuming application to decide how and where log messages are routed\n  (e.g., print to console, send to an external service, store in memory).\n- **Structured Context:** Log messages include a `context` table. Loggers can be\n  `extend`ed with additional context fields, which are automatically merged into\n  every subsequent log message created by that logger instance or its descendants.\n  This helps provide detailed, structured information for debugging and monitoring.\n- **Log Levels:** Supports standard log levels (`fatal`, `error`, `warn`, `info`,\n  `debug`, `trace`). A global log level can be set using `Log.setLevel` to filter\n  out messages below the desired severity.\n\n**Usage:**\n```lua\nlocal Log = require(script.Parent.Log)\n\n-- Set the global minimum log level (optional, defaults to \&quot;info\&quot;)\nLog.setLevel(\&quot;debug\&quot;)\n\n-- Create a logger instance with a callback\nlocal myLogger = Log.createLogger(function(logMessage)\n\tprint(`[{logMessage.level}] {logMessage.message}`, logMessage.context)\nend, { initialContext = \&quot;value\&quot; })\n\n-- Log messages\nmyLogger:log(\&quot;info\&quot;, \&quot;User logged in\&quot;, { userId = 123 })\n\n-- Create a logger with extended context\nlocal sessionLogger = myLogger:extend({ sessionId = \&quot;abc\&quot; })\nsessionLogger:log(\&quot;debug\&quot;, \&quot;Session data loaded\&quot;)\n-- Output will include { initialContext = \&quot;value\&quot;, sessionId = \&quot;abc\&quot;, userId = 123 }\n-- if logged via myLogger, or { initialContext = \&quot;value\&quot;, sessionId = \&quot;abc\&quot; }\n-- if logged via sessionLogger.\n```&quot;,
+    &quot;private&quot;: true,
+    &quot;source&quot;: {
+        &quot;line&quot;: 43,
+        &quot;path&quot;: &quot;src/Log.luau&quot;
+    }
+}</pre></details></div><div class="col col--3"><div class="tableOfContents_bqdL thin-scrollbar"><ul class="table-of-contents table-of-contents__left-border"><li><a href="#types" class="table-of-contents__link toc-highlight">Types</a><ul><li><a href="#LogLevel" class="table-of-contents__link toc-highlight">LogLevel</a></li><li><a href="#LogMessage" class="table-of-contents__link toc-highlight">LogMessage</a></li></ul></li><li><a href="#functions" class="table-of-contents__link toc-highlight">Functions</a><ul><li><a href="#extend" class="table-of-contents__link toc-highlight">:extend</a></li><li><a href="#log" class="table-of-contents__link toc-highlight">:log</a></li><li><a href="#createLogger" class="table-of-contents__link toc-highlight">.createLogger</a></li><li><a href="#setLevel" class="table-of-contents__link toc-highlight">.setLevel</a></li></ul></li></ul></div></div></div></div></main></div></div><footer class="footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="col footer__col"><div class="footer__title">Links</div><ul class="footer__items clean-list"><li class="footer__item"><a href="https://github.com/paradoxum-games/lyra" target="_blank" rel="noopener noreferrer" class="footer__link-item">GitHub<svg width="13.5" height="13.5" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a></li></ul></div></div><div class="footer__bottom text--center"><div class="footer__copyright">Built with Moonwave and Docusaurus</div></div></div></footer></div>
+</body>
+</html>
