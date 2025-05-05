@@ -105,7 +105,7 @@ local function validateMetadata(metadata: any)
 		error("DataStoreService: Metadata must be a table", 0)
 	end
 
-	local serialized = game:GetService("HttpService"):JSONEncode(metadata)
+	local serialized = HttpService:JSONEncode(metadata)
 	if #serialized > MAX_METADATA_SIZE then
 		error(`DataStoreService: Metadata size exceeds {MAX_METADATA_SIZE} limit`, 0)
 	end
