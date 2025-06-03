@@ -98,20 +98,20 @@ local function equalsDeep(a: { [any]: any }, b: { [any]: any }): boolean
 	return true
 end
 
-local function freezeDeep<T>(t: T): T
-	local result = {}
-
-	for key, value in t :: any do
-		if typeof(value) == "table" then
-			result[key] = freezeDeep(value)
-		else
-			result[key] = value
-		end
+local function freezeDeep<T>(t: T): ()
+	if typeof(t) ~= "table" then
+		return
 	end
 
-	table.freeze(result)
+	if table.isfrozen(t) == false then
+		table.freeze(t)
+	end
 
-	return result :: any
+	for _, value in t :: any do
+		if typeof(value) == "table" then
+			freezeDeep(value)
+		end
+	end
 end
 
 return {
