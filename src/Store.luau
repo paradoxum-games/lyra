@@ -48,7 +48,6 @@
 local DataStoreService = game:GetService("DataStoreService")
 local HttpService = game:GetService("HttpService")
 local MemoryStoreService = game:GetService("MemoryStoreService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Constants = require(script.Parent.Constants)
@@ -66,7 +65,7 @@ local Tables = require(script.Parent.Tables)
 local Types = require(script.Parent.Types)
 local dataStoreRetry = require(script.Parent.dataStoreRetry)
 local noYield = require(script.Parent.noYield)
-local t = require(ReplicatedStorage.Packages.t)
+local t = require(script.Parent.Parent.t)
 
 --[=[
 	Configuration options for creating a new Store instance using `createStore`.

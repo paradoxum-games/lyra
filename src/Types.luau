@@ -5,10 +5,8 @@
 	Common types shared among different modules.
 ]=]
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
 local Log = require(script.Parent.Log)
-local t = require(ReplicatedStorage.Packages.t)
+local t = require(script.Parent.Parent.t)
 
 --[=[
 	Represents a single operation within a JSON Patch array.
