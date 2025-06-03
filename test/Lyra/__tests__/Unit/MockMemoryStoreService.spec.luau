@@ -130,7 +130,7 @@ describe("MockMemoryStoreService", function()
 			expect(val).toBeNil()
 
 			local getVal = call(hashMap, "GetAsync", "delKey")
-			expect(getVal).toBe(value)
+			expect(getVal).toEqual(value)
 		end)
 	end)
 

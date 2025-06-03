@@ -158,6 +158,10 @@ local function isExpired(entry: any): boolean
 	return getNow() > entry.expiration
 end
 
+local function sanitize(value: any): any
+	return Tables.copyDeep(value)
+end
+
 local MockHashMap = {}
 
 function MockHashMap:GetAsync(key: string): any?
@@ -177,6 +181,7 @@ function MockHashMap:GetAsync(key: string): any?
 end
 
 function MockHashMap:SetAsync(key: string, value: any, expiration: number): boolean
+	value = sanitize(value)
 	enforceKeyLimits(key)
 	enforceValueLimits(value)
 	enforceExpirationLimits(expiration)
@@ -222,6 +227,7 @@ function MockHashMap:UpdateAsync(key: string, transformFunction: (any?) -> any?,
 		if newValue == nil then
 			return nil
 		end
+		newValue = sanitize(newValue)
 
 		enforceValueLimits(newValue)
 

@@ -237,9 +237,14 @@ local function doRateLimitAndQueue(self: any, requestType: string)
 	return true
 end
 
+local function sanitize(value: any)
+	return Tables.copyDeep(value)
+end
+
 local MockDataStore = {}
 
 function MockDataStore:SetAsync(key, value, userIds, options)
+	value = sanitize(value)
 	enforceKeyLimits(key)
 	enforceDataLimits(value)
 	if options then
@@ -311,6 +316,7 @@ function MockDataStore:UpdateAsync(key, transformFunction)
 		if newValue == nil then
 			return currentValue, keyInfo
 		end
+		newValue = sanitize(newValue)
 
 		enforceDataLimits(newValue)
 		validateMetadata(newMetadata)
