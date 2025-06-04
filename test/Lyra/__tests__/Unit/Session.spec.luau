@@ -56,8 +56,6 @@ describe("Session", function()
 			shardStore = mockData:GetDataStore("shards"),
 			txStore = mockData:GetDataStore("tx"),
 			lockHashMap = mockMemory:GetHashMap("locks"),
-
-			disableReferenceProtection = false,
 		}
 		jest.useFakeTimers()
 	end)
@@ -124,6 +122,232 @@ describe("Session", function()
 			return expect(function()
 				data.coins = 100
 			end).toThrow()
+		end)
+	end)
+
+	describe("mutable update API", function()
+		it("should update data and return true when transform mutates data and returns true", function()
+			local session = getSession()
+			local originalDataPromise = session:get()
+			jest.advanceTimersByTime(1000)
+			local originalData = originalDataPromise:expect()
+
+			local updatePromise = session:update(function(data)
+				data.coins = data.coins + 50
+				data.inventory.newItem = "testItem"
+				return true
+			end)
+			jest.advanceTimersByTime(1000)
+
+			expect(updatePromise:expect()).toBe(true)
+
+			local newDataPromise = session:get()
+			jest.advanceTimersByTime(1000)
+			local newData = newDataPromise:expect()
+
+			expect(newData.coins).toEqual(originalData.coins + 50)
+			expect(newData.inventory.newItem).toEqual("testItem")
+			expect(session:isSaved()).toBe(false) -- Changes made, not saved yet
+		end)
+
+		it(
+			"should return true, not change data, and not call changedCallbacks if transform returns true but makes no changes",
+			function()
+				local callbackMock, callbackFn = jest.fn()
+				ctx.changedCallbacks = { callbackFn }
+
+				local session = getSession()
+				jest.advanceTimersByTime(1000)
+				local initialData = session:get():expect()
+				jest.advanceTimersByTime(1000)
+				callbackMock.mockClear() -- Clear after initial load
+
+				expect(session:isSaved()).toBe(false) -- Unsaved after load
+				session:save()
+				jest.advanceTimersByTime(1000)
+				expect(session:isSaved()).toBe(true) -- Saved now
+
+				local updatePromise = session:update(function(data)
+					-- No actual change to data content
+					return true
+				end)
+				jest.advanceTimersByTime(1000)
+
+				expect(updatePromise:expect()).toBe(true)
+
+				local currentData = session:get():expect()
+				jest.advanceTimersByTime(1000)
+				expect(currentData).toEqual(initialData)
+				expect(session:isSaved()).toBe(true) -- Should remain saved as no effective change
+				expect(callbackMock).toHaveBeenCalledTimes(0) -- No change, no callback
+			end
+		)
+
+		it("should return false and not change data when transform returns false", function()
+			local session = getSession()
+			local originalDataPromise = session:get()
+			jest.advanceTimersByTime(1000)
+			local originalData = originalDataPromise:expect()
+
+			local updatePromise = session:update(function(data)
+				data.coins = data.coins + 10 -- Attempt to change
+				return false -- Abort
+			end)
+			jest.advanceTimersByTime(1000)
+
+			expect(updatePromise:expect()).toBe(false)
+
+			local currentDataPromise = session:get()
+			jest.advanceTimersByTime(1000)
+			local currentData = currentDataPromise:expect()
+			expect(currentData).toEqual(originalData) -- Data should not have changed
+			expect(currentData.coins).toEqual(0) -- Specifically check coins
+			expect(session:isSaved()).toBe(false) -- Still unsaved from initial load
+		end)
+
+		it("should reject if transform function itself errors during mutable update", function()
+			local session = getSession()
+			local updatePromise = session:update(function(data)
+				error("Mutable transform error!")
+				return true -- Unreachable
+			end)
+			jest.advanceTimersByTime(1000)
+
+			return expect(updatePromise).rejects.toMatch("Mutable transform error!")
+		end)
+	end)
+
+	describe("immutable update API", function()
+		it("should update data and return true when transform returns new, valid data", function()
+			local session = getSession()
+			local originalDataPromise = session:get()
+			jest.advanceTimersByTime(1000)
+			local originalData = originalDataPromise:expect()
+
+			local updatePromise = session:updateImmutable(function(data)
+				-- Return a new table with modifications
+				return { coins = data.coins + 100, inventory = data.inventory, newField = true }
+			end)
+			jest.advanceTimersByTime(1000)
+
+			expect(updatePromise:expect()).toBe(true)
+
+			local newDataPromise = session:get()
+			jest.advanceTimersByTime(1000)
+			local newData = newDataPromise:expect()
+
+			expect(newData.coins).toEqual(originalData.coins + 100)
+			expect(newData.inventory).toEqual(originalData.inventory)
+			expect(newData.newField).toBe(true) -- Schema allows extra fields
+			expect(session:isSaved()).toBe(false)
+		end)
+
+		it("should call changedCallbacks with new and old data on successful immutable update", function()
+			local callbackMock, callbackFn = jest.fn()
+			ctx.changedCallbacks = { callbackFn }
+
+			local session = getSession() -- Initial load calls callback
+			jest.advanceTimersByTime(1000)
+			callbackMock.mockClear() -- Clear mock from initial load
+
+			local originalData = { coins = 0, inventory = {} } -- from template
+			local transformedData = { coins = 50, inventory = { "item1" } }
+
+			local updatePromise = session:updateImmutable(function(data)
+				return transformedData
+			end)
+			jest.advanceTimersByTime(1000)
+			updatePromise:expect() -- Ensure update completes
+
+			expect(callbackMock).toHaveBeenCalledTimes(1)
+			expect(callbackMock).toHaveBeenCalledWith("player1", transformedData, originalData)
+		end)
+
+		it(
+			"should return true and not change data or call changedCallbacks if transform returns an identical new table",
+			function()
+				local callbackMock, callbackFn = jest.fn()
+				ctx.changedCallbacks = { callbackFn }
+
+				local session = getSession()
+				jest.advanceTimersByTime(1000)
+				local initialData = session:get():expect()
+				jest.advanceTimersByTime(1000)
+				callbackMock.mockClear() -- Clear after initial load
+
+				expect(session:isSaved()).toBe(false) -- Unsaved after load
+				session:save()
+				jest.advanceTimersByTime(1000)
+				expect(session:isSaved()).toBe(true) -- Saved now
+
+				local updatePromise = session:updateImmutable(function(data)
+					return { coins = data.coins, inventory = table.clone(data.inventory) } -- Identical content
+				end)
+				jest.advanceTimersByTime(1000)
+
+				expect(updatePromise:expect()).toBe(true)
+
+				local currentData = session:get():expect()
+				jest.advanceTimersByTime(1000)
+				expect(currentData).toEqual(initialData)
+				expect(session:isSaved()).toBe(true) -- Should remain saved as no effective change
+				expect(callbackMock).toHaveBeenCalledTimes(0) -- No change, no callback
+			end
+		)
+
+		it("should return false and not change data when transform returns false", function()
+			local session = getSession()
+			local originalDataPromise = session:get()
+			jest.advanceTimersByTime(1000)
+			local originalData = originalDataPromise:expect()
+
+			local updatePromise = session:updateImmutable(function(data)
+				-- Attempt to change, but return false
+				local _ = data.coins + 10
+				return false
+			end)
+			jest.advanceTimersByTime(1000)
+
+			expect(updatePromise:expect()).toBe(false)
+
+			local currentDataPromise = session:get()
+			jest.advanceTimersByTime(1000)
+			expect(currentDataPromise:expect()).toEqual(originalData)
+			expect(session:isSaved()).toBe(false) -- Still unsaved from initial load
+		end)
+
+		it("should reject if new data from transform fails schema validation", function()
+			local session = getSession()
+			local updatePromise = session:updateImmutable(function(data)
+				return { coins = "not a number", inventory = {} } -- Invalid coins type
+			end)
+			jest.advanceTimersByTime(1000)
+
+			return expect(updatePromise).rejects.toMatch("schema validation failed")
+		end)
+
+		it("should reject if transform function itself errors", function()
+			local session = getSession()
+			local updatePromise = session:updateImmutable(function(data)
+				error("Something went wrong in transform!")
+				return data -- Unreachable
+			end)
+			jest.advanceTimersByTime(1000)
+
+			return expect(updatePromise).rejects.toMatch("Something went wrong in transform!")
+		end)
+
+		it("should reject when trying to update a closed session", function()
+			local session = getSession()
+			session:unload()
+			jest.advanceTimersByTime(1000) -- Ensure unload completes
+
+			local updatePromise = session:updateImmutable(function(data)
+				return { coins = data.coins + 10, inventory = data.inventory }
+			end)
+			jest.advanceTimersByTime(1000)
+
+			return expect(updatePromise).rejects.toEqual("Session is closed")
 		end)
 	end)
 

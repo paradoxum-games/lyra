@@ -123,8 +123,6 @@ export type MigrationStep = {
 	.shardStore DataStore -- The DataStore used to store the actual data shards for large files.
 	.txStore DataStore -- The DataStore used to store transaction status markers (`txId` keys).
 	.lockHashMap MemoryStoreHashMap -- The MemoryStore HashMap used for managing distributed locks.
-
-	.disableReferenceProtection boolean -- If true, disables the deep copying mechanism used to prevent accidental modification of internal state references returned by `get()`. Use with caution, only if performance is critical and mutation risks are understood and managed. Defaults to `false`.
 ]=]
 export type StoreContext<T> = {
 	name: string,
@@ -145,8 +143,6 @@ export type StoreContext<T> = {
 	shardStore: DataStore,
 	txStore: DataStore,
 	lockHashMap: MemoryStoreHashMap,
-
-	disableReferenceProtection: boolean,
 }
 
 -- Validation check for TxInfo structure using 't' library.

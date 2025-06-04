@@ -85,62 +85,19 @@ describe("Store", function()
 			expect(fn).toThrow(err)
 		end)
 
-		it("disableReferenceProtection works correctly when true", function()
-			local myStore = makeStore({
-				disableReferenceProtection = true,
-			})
-
-			myStore:load("player1")
+		it("mutating a leaked table reference errors", function()
 			local leakedData
-			myStore:update("player1", function(data)
+			store:load("player1")
+			store:update("player1", function(data)
 				leakedData = data
 				data.coins = 999
 				return true
 			end)
 			jest.advanceTimersByTime(1000)
 
-			leakedData.coins = 123
-
-			local dataLeaked = false
-			myStore:update("player1", function(data)
-				if data.coins == 123 then
-					dataLeaked = true
-				end
-				return false
-			end)
-
-			jest.advanceTimersByTime(1000)
-
-			return expect(dataLeaked).toBe(true)
-		end)
-
-		it("disableReferenceProtection works correctly when false", function()
-			local myStore = makeStore({
-				disableReferenceProtection = false,
-			})
-
-			myStore:load("player1")
-			local leakedData
-			myStore:update("player1", function(data)
-				leakedData = data
-				data.coins = 999
-				return true
-			end)
-			jest.advanceTimersByTime(1000)
-
-			leakedData.coins = 123
-
-			local dataLeaked = false
-			myStore:update("player1", function(data)
-				if data.coins == 123 then
-					dataLeaked = true
-				end
-				return false
-			end)
-
-			jest.advanceTimersByTime(1000)
-
-			return expect(dataLeaked).toBe(false)
+			expect(function()
+				leakedData.coins = 123
+			end).toThrow("attempt to modify a readonly table")
 		end)
 
 		it.todo("creates a store with useMock enabled in Studio")

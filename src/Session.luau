@@ -88,6 +88,7 @@ type SessionImpl<T> = {
 	unload: (self: Session<T>) -> Promise.Promise,
 	get: (self: Session<T>) -> Promise.TPromise<T>,
 	update: (self: Session<T>, transformFunction: (data: T) -> boolean) -> Promise.TPromise<boolean>,
+	updateImmutable: (self: Session<T>, transformFunction: (data: T) -> T | false) -> Promise.TPromise<boolean>,
 	save: (self: Session<T>) -> Promise.Promise,
 }
 
@@ -106,7 +107,6 @@ type SessionImpl<T> = {
 	.userIds { number }? -- User IDs associated with this session (primarily for SetAsync).
 
 	.data T? -- The current, mutable in-memory data.
-	.frozenData T? -- A deeply frozen, immutable copy of the data for safe external access (`get`).
 	.appliedMigrations { string } -- List of migration step names already applied to this data.
 
 	.changeSet { [string]: true } -- Tracks unsaved changes. Keys are unique mutation IDs, value is always true. Cleared on successful save.
@@ -130,7 +130,6 @@ type SessionProps<T> = {
 	lockHandle: Locks.LockHandle,
 	userIds: { number }?,
 	data: T?,
-	frozenData: T?,
 	appliedMigrations: { string },
 	changeSet: { [string]: true },
 	orphanedFiles: { Types.File },
@@ -427,7 +426,6 @@ local function createSession<T>(params: CreateSessionParams): Session<T>
 		userIds = params.userIds,
 
 		data = nil, -- Initial data set later by mutateKey
-		frozenData = nil, -- Initial data set later by mutateKey
 		appliedMigrations = params.appliedMigrations,
 
 		changeSet = {}, -- Starts with no unsaved changes
@@ -768,7 +766,7 @@ end
 
 --[=[
 	Internal method to update the session's in-memory data state.
-	Marks the session as having unsaved changes and updates the frozen copy.
+	Marks the session as having unsaved changes and updates the data.
 
 	@within Session
 	@private
@@ -778,10 +776,9 @@ function Session:setData(data: any): ()
 	-- Generate a unique ID for this mutation and add it to the changeSet.
 	local mutationId = HttpService:GenerateGUID(false)
 	self.changeSet[mutationId] = true
-	-- Update the mutable data reference.
+	-- Freeze and update the data reference.
+	Tables.freezeDeep(data)
 	self.data = data
-	-- Create a new deeply frozen copy for `get` operations.
-	self.frozenData = Tables.freezeDeep(data :: any)
 end
 
 --[=[
@@ -793,16 +790,14 @@ end
 	@param newData any -- The new data value.
 ]=]
 function Session:mutateKey(newData: any): ()
-	local oldFrozenData = self.frozenData -- Store reference to previous frozen state
+	local oldData = self.data -- Store reference to previous data
 
-	-- Update internal state (sets .data, .frozenData, and marks changeSet)
+	-- Update internal data (sets .data and marks changeSet)
 	self:setData(newData)
-
-	local newFrozenData = self.frozenData
 
 	-- Trigger change callbacks asynchronously
 	for _, callback in self.ctx.changedCallbacks do
-		task.spawn(callback, self.key, newFrozenData, oldFrozenData)
+		task.spawn(callback, self.key, self.data, oldData)
 	end
 end
 
@@ -918,18 +913,117 @@ function Session:unload(): Promise.Promise
 end
 
 --[=[
-	Gets the current, immutable (frozen) data for the session.
+	Gets the current data for the session. Value returned is deep frozen to prevent modification.
 
 	@within Session
-	@return Promise<T> -- Resolves immediately with the frozen data.
+	@return Promise<T> -- Resolves immediately with the data.
 ]=]
 function Session:get<T>(): Promise.TPromise<T>
-	return Promise.resolve(self.frozenData) :: any
+	return Promise.resolve(self.data) :: any
+end
+
+-- Internal function to encapsulate shared logic for update and updateImmutable.
+local function updateInternal(
+	self: Session<any>,
+	transformFunction: (data: any) -> any | false,
+	immutable: boolean,
+	logger: Log.Logger
+): Promise.TPromise<boolean>
+	-- Use Promise.new to handle potential waits for txLockPromise
+	return Promise.new(function(resolve, reject)
+		-- Wait if a multi-key transaction is currently holding the lock on this session
+		while self.txLockPromise ~= nil do
+			logger:log("trace", "waiting for txLockPromise to resolve")
+			self.txLockPromise:await()
+			-- Re-check if closed after waiting, as lock loss could occur during tx
+			if self.closed then
+				logger:log("warn", "Session closed while waiting for txLockPromise, rejecting update")
+				return reject("Session is closed")
+			end
+		end
+		logger:log("trace", `txLockPromise resolved or was nil, proceeding with update`)
+
+		-- Store a reference to our current data - we'll need this later to
+		-- check if the data changed at all
+		local currentData = self.data
+
+		local nextData
+		if immutable then
+			-- If immutable is true, we'll pass in `self.data` (which is frozen)
+			-- and expect to get a copy-on-write result from `transformFunction`
+			nextData = self.data
+		else
+			-- If immutable is false, we allow the transform to modify the data
+			-- directly, so we need a deep copy in case we want to abandon the
+			-- changes
+			nextData = Tables.copyDeep(self.data)
+		end
+
+		-- Execute the transform function safely using `noYield`
+		local transformOk, result = pcall(noYield, transformFunction, nextData :: any)
+		if not transformOk then
+			logger:log("error", "transformFunction errored", { error = result })
+			return reject(`transformFunction failed: {result}`)
+		end
+
+		-- Check the return value of the transform function
+		if immutable == false then
+			-- If immutable is false, we expect the transform to return a boolean
+			if typeof(result) ~= "boolean" then
+				logger:log("error", "transformFunction did not return a boolean")
+				return reject("transformFunction must return a boolean")
+			end
+		else
+			-- If immutable is true, we expect the transform to return a new copy of data or false
+			if typeof(result) ~= "table" and result ~= false then
+				logger:log("error", "transformFunction returned a boolean when it should return data or false")
+				return reject("transformFunction must return data or false")
+			end
+		end
+
+		-- If transform returned false, abort the update
+		if result == false then
+			logger:log("trace", "transformFunction returned false, update aborted")
+			return resolve(false)
+		end
+
+		if immutable then
+			-- If immutable is true, we expect the transform to return a new
+			-- copy of data
+			nextData = result :: any
+		end
+
+		-- Validate the modified data against the schema
+		local schemaOk, err = self.ctx.schema(nextData :: any)
+		if not schemaOk then
+			logger:log("error", "schema validation failed after transform", { error = err })
+			return reject(`Store:update schema validation failed: {err}`)
+		end
+
+		-- Check if the data actually changed
+		if Tables.equalsDeep(nextData :: any, currentData :: any) then
+			logger:log("trace", "transform resulted in no data change, resolving true")
+			return resolve(true) -- Considered successful, but data remains same
+		end
+
+		-- TODO: If immutable is false, we should comb through the data and
+		-- reconstruct a proper copy-on-write structure to make change detecting
+		-- easier in `changedCallbacks`
+
+		-- Data changed and is valid, apply the mutation
+		self:mutateKey(nextData)
+
+		logger:log("trace", "update applied successfully")
+
+		-- Resolve indicating changes were committed
+		return resolve(true)
+	end)
 end
 
 --[=[
 	Applies updates to the session's data via a transform function.
 	Ensures the transform runs without yielding and validates the result against the schema.
+	Allows you to directly mutate the data in-place.
 
 	@within Session
 	@param transformFunction (data: T) -> boolean -- Function to modify data. Must return `true` to commit, `false` to abort.
@@ -951,71 +1045,36 @@ function Session:update<T>(transformFunction: (data: T) -> boolean): Promise.TPr
 		return Promise.reject("Session is closed")
 	end
 
-	-- Use Promise.new to handle potential waits for txLockPromise
-	return Promise.new(function(resolve, reject)
-		-- Wait if a multi-key transaction is currently holding the lock on this session
-		while self.txLockPromise ~= nil do
-			logger:log("trace", "waiting for txLockPromise to resolve")
-			self.txLockPromise:await()
-			-- Re-check if closed after waiting, as lock loss could occur during tx
-			if self.closed then
-				logger:log("warn", "Session closed while waiting for txLockPromise, rejecting update")
-				return reject("Session is closed")
-			end
-		end
-		logger:log("trace", `txLockPromise resolved or was nil, proceeding with update`)
+	return updateInternal(self, transformFunction, false, logger)
+end
 
-		-- Get current mutable data and create a working copy for the transform
-		local currentData = self.data
-		local nextData = Tables.copyDeep(currentData)
+--[=[
+	Applies updates to the session's data via a transform function.
+	Ensures the transform runs without yielding and validates the result against the schema.
+	Requires the use of copy-on-write semantics in transformFunction, where
+	the data is not directly mutated but instead a new copy is returned.
 
-		-- Execute the transform function safely using `noYield`
-		local transformOk, result = pcall(noYield, transformFunction, nextData :: any)
-		if not transformOk then
-			logger:log("error", "transformFunction errored", { error = result })
-			return reject(`transformFunction failed: {result}`)
-		end
+	@within Session
+	@param transformFunction (data: T) -> T | false -- Function to modify data. Must return a new copy of the data with changes to commit changes, or `false` to abort.
+	@return Promise<boolean> -- Resolves with `true` if changes were committed, `false` if aborted by the transform.
+	@error "Session is closed"
+	@error "transformFunction failed: ..." -- If the transform function errors.
+	@error "transformFunction must return a boolean"
+	@error "Store:update schema validation failed: ..." -- If the modified data fails schema validation.
+]=]
+function Session:updateImmutable<T>(transformFunction: (data: T) -> T | false): Promise.TPromise<boolean>
+	assert(t.callback(transformFunction))
 
-		-- Check the return value of the transform function
-		if typeof(result) ~= "boolean" then
-			logger:log("error", "transformFunction did not return a boolean")
-			return reject("transformFunction must return a boolean")
-		end
+	local logger = self.logger:extend({ method = "updateImmutable" })
+	logger:log("trace", "updateImmutable called")
 
-		-- If transform returned false, abort the update
-		if result == false then
-			logger:log("trace", "transformFunction returned false, update aborted")
-			return resolve(false)
-		end
+	-- Reject if session is closed
+	if self.closed then
+		logger:log("warn", "Session is closed, rejecting update")
+		return Promise.reject("Session is closed")
+	end
 
-		-- Optional: Deep copy again if reference protection is enabled (default)
-		-- This prevents the transform function from holding references to internal
-		-- tables and modifying them after the transform function returns.
-		if self.ctx.disableReferenceProtection == false then
-			nextData = Tables.copyDeep(nextData)
-		end
-
-		-- Validate the modified data against the schema
-		local schemaOk, err = self.ctx.schema(nextData :: any)
-		if not schemaOk then
-			logger:log("error", "schema validation failed after transform", { error = err })
-			return reject(`Store:update schema validation failed: {err}`)
-		end
-
-		-- Check if the data actually changed
-		if Tables.equalsDeep(nextData :: any, currentData :: any) then
-			logger:log("trace", "transform resulted in no data change, resolving true")
-			return resolve(true) -- Considered successful, but no mutation needed
-		end
-
-		-- Data changed and is valid, apply the mutation
-		self:mutateKey(nextData)
-
-		logger:log("trace", "update applied successfully")
-
-		-- Resolve indicating changes were committed
-		return resolve(true)
-	end)
+	return updateInternal(self, transformFunction, true, logger)
 end
 
 --[=[

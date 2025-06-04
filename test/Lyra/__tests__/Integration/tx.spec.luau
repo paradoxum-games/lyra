@@ -319,4 +319,281 @@ describe("tx", function()
 			end)
 		end)
 	end)
+
+	describe("txImmutable", function()
+		it("should successfully commit changes when transform returns a new state", function()
+			store:load("keyA")
+			store:load("keyB")
+			jest.advanceTimersByTime(1000)
+
+			local originalA = store:get("keyA"):expect()
+			local originalB = store:get("keyB"):expect()
+
+			local txPromise = store:txImmutable({ "keyA", "keyB" }, function(state)
+				local newState = {
+					keyA = { coins = state.keyA.coins + 100 },
+					keyB = { coins = state.keyB.coins + 50 },
+				}
+				return newState
+			end)
+			jest.advanceTimersByTime(2000) -- Allow time for tx processing and save
+
+			expect(txPromise:expect()).toBe(true)
+
+			local dataA = store:get("keyA"):expect()
+			local dataB = store:get("keyB"):expect()
+			jest.advanceTimersByTime(1000)
+
+			expect(dataA.coins).toEqual(originalA.coins + 100)
+			expect(dataB.coins).toEqual(originalB.coins + 50)
+
+			-- Verify underlying data store reflects changes after a save cycle
+			store:unload("keyA")
+			store:unload("keyB")
+			jest.advanceTimersByTime(1000)
+
+			store:close()
+			jest.advanceTimersByTime(5000)
+			resetStore()
+
+			local a = store:load("keyA")
+			local b = store:load("keyB")
+			jest.advanceTimersByTime(5000)
+			print(a:expect(), b:expect())
+
+			local finalDataA = store:get("keyA"):expect()
+			local finalDataB = store:get("keyB"):expect()
+
+			expect(finalDataA.coins).toEqual(originalA.coins + 100)
+			expect(finalDataB.coins).toEqual(originalB.coins + 50)
+		end)
+
+		it("should abort transaction and not change data when transform returns false", function()
+			store:load("key1")
+			store:load("key2")
+			jest.advanceTimersByTime(1000)
+
+			local originalData1 = store:get("key1"):expect()
+			local originalData2 = store:get("key2"):expect()
+			jest.advanceTimersByTime(1000)
+
+			local txPromise = store:txImmutable({ "key1", "key2" }, function(state)
+				return false -- Abort
+			end)
+			jest.advanceTimersByTime(1000)
+
+			expect(txPromise:expect()).toBe(false)
+
+			local currentData1 = store:get("key1"):expect()
+			local currentData2 = store:get("key2"):expect()
+			jest.advanceTimersByTime(1000)
+
+			expect(currentData1).toEqual(originalData1)
+			expect(currentData2).toEqual(originalData2)
+		end)
+
+		it("should return true and not save if transform returns an identical new state", function()
+			store:load("keyX")
+			store:load("keyY")
+			jest.advanceTimersByTime(1000)
+
+			local initialX = store:get("keyX"):expect()
+			local initialY = store:get("keyY"):expect()
+			jest.advanceTimersByTime(1000)
+
+			-- Ensure data is considered "saved" by performing an initial save
+			store:save("keyX")
+			store:save("keyY")
+			jest.advanceTimersByTime(1000)
+			expect(store._sessions.keyX:isSaved()).toBe(true)
+			expect(store._sessions.keyY:isSaved()).toBe(true)
+
+			local mockSetAsync = MockDataStoreService.mockStoreMethod(mockData, "SetAsync", jest)
+
+			local txPromise = store:txImmutable({ "keyX", "keyY" }, function(state)
+				return {
+					keyX = { coins = state.keyX.coins }, -- Identical content
+					keyY = { coins = state.keyY.coins }, -- Identical content
+				}
+			end)
+			jest.advanceTimersByTime(1000)
+
+			expect(txPromise:expect()).toBe(true)
+			expect(mockSetAsync).toHaveBeenCalledTimes(0) -- No SetAsync should be called for tx marker or data if no change
+
+			local currentX = store:get("keyX"):expect()
+			local currentY = store:get("keyY"):expect()
+			jest.advanceTimersByTime(1000)
+
+			expect(currentX).toEqual(initialX)
+			expect(currentY).toEqual(initialY)
+			expect(store._sessions.keyX:isSaved()).toBe(true) -- Should remain saved
+			expect(store._sessions.keyY:isSaved()).toBe(true) -- Should remain saved
+		end)
+
+		it("should reject if new state from transform fails schema validation", function()
+			store:load("sKey1")
+			store:load("sKey2")
+			jest.advanceTimersByTime(1000)
+
+			local txPromise = store:txImmutable({ "sKey1", "sKey2" }, function(state)
+				return {
+					sKey1 = { coins = "not-a-number" }, -- Invalid
+					sKey2 = { coins = state.sKey2.coins + 5 },
+				}
+			end)
+			jest.advanceTimersByTime(1000)
+
+			return expect(txPromise).rejects.toMatch("schema validation failed for key 'sKey1'")
+		end)
+
+		it("should reject if transform function itself errors", function()
+			store:load("errKey1")
+			jest.advanceTimersByTime(1000)
+
+			local txPromise = store:txImmutable({ "errKey1" }, function(state)
+				error("Transform error in txImmutable!")
+				return state -- Unreachable
+			end)
+			jest.advanceTimersByTime(1000)
+
+			return expect(txPromise).rejects.toMatch("Transform error in txImmutable!")
+		end)
+
+		it("should reject if any key is not loaded", function()
+			store:load("loadedKey")
+			jest.advanceTimersByTime(1000)
+
+			local txPromise = store:txImmutable({ "loadedKey", "unloadedKey" }, function(state)
+				return state -- Should not reach here
+			end)
+			jest.advanceTimersByTime(1000)
+			return expect(txPromise).rejects.toEqual("Key not loaded: unloadedKey")
+		end)
+
+		it("should reject if store is closed", function()
+			store:load("cKey1")
+			jest.advanceTimersByTime(1000)
+
+			store:close()
+			jest.advanceTimersByTime(1000)
+
+			local txPromise = store:txImmutable({ "cKey1" }, function(state)
+				return state
+			end)
+			return expect(txPromise).rejects.toEqual("Store is closed")
+		end)
+
+		it("should reject if keys are added in returned state", function()
+			store:load("kAdd1")
+			jest.advanceTimersByTime(1000)
+
+			local txPromise = store:txImmutable({ "kAdd1" }, function(state)
+				local newState = {
+					kAdd1 = { coins = state.kAdd1.coins + 1 },
+					kAdd2 = { coins = 100 }, -- Adding a key
+				}
+				return newState
+			end)
+			jest.advanceTimersByTime(1000)
+			return expect(txPromise).rejects.toMatch("Keys changed in transaction")
+		end)
+
+		it("should reject if keys are removed in returned state", function()
+			store:load("kRem1")
+			store:load("kRem2")
+			jest.advanceTimersByTime(1000)
+
+			local txPromise = store:txImmutable({ "kRem1", "kRem2" }, function(state)
+				local newState = {
+					kRem1 = { coins = state.kRem1.coins + 1 },
+					-- kRem2 is removed
+				}
+				return newState
+			end)
+			jest.advanceTimersByTime(1000)
+			return expect(txPromise).rejects.toMatch("Keys changed in transaction")
+		end)
+
+		it("should handle single key change as normal update (no tx datastore ops)", function()
+			store:load("singleKeyTxI")
+			jest.advanceTimersByTime(1000)
+			local originalData = store:get("singleKeyTxI"):expect()
+			jest.advanceTimersByTime(1000)
+
+			local mockSetAsync = MockDataStoreService.mockStoreMethod(mockData, "SetAsync", jest)
+			local mockRemoveAsync = MockDataStoreService.mockStoreMethod(mockData, "RemoveAsync", jest)
+
+			local txPromise = store:txImmutable({ "singleKeyTxI" }, function(state)
+				return {
+					singleKeyTxI = { coins = state.singleKeyTxI.coins + 77 },
+				}
+			end)
+			jest.advanceTimersByTime(1000)
+			expect(txPromise:expect()).toBe(true)
+
+			-- For single key update, txStore SetAsync/RemoveAsync should not be called
+			expect(mockSetAsync).never.toHaveBeenCalledWith(
+				expect.anything(),
+				expect.stringMatching("%w+%-%w+%-%w+%-%w+%-%w+"),
+				expect.anything()
+			)
+			expect(mockRemoveAsync).never.toHaveBeenCalledWith(
+				expect.anything(),
+				expect.stringMatching("%w+%-%w+%-%w+%-%w+%-%w+")
+			)
+
+			local newData = store:get("singleKeyTxI"):expect()
+			jest.advanceTimersByTime(1000)
+			expect(newData.coins).toEqual(originalData.coins + 77)
+			expect(store._sessions.singleKeyTxI:isSaved()).toBe(false) -- Data changed, session unsaved
+
+			-- Verify save works
+			store:save("singleKeyTxI")
+			jest.advanceTimersByTime(1000)
+			expect(store._sessions.singleKeyTxI:isSaved()).toBe(true)
+		end)
+
+		it("crash after commit should save changed data (txImmutable)", function()
+			store:load("crashKeyA")
+			store:load("crashKeyB")
+			jest.advanceTimersByTime(1000)
+
+			local txCommitted = false
+			local removeMock, realRemove = MockDataStoreService.mockStoreMethod(mockData, "RemoveAsync", jest)
+			removeMock.mockImplementation(function(self, key, ...)
+				local ret = table.pack(realRemove(self, key, ...))
+				txCommitted = true
+				return table.unpack(ret)
+			end)
+
+			store:txImmutable({ "crashKeyA", "crashKeyB" }, function(state)
+				return {
+					crashKeyA = { coins = state.crashKeyA.coins + 10 },
+					crashKeyB = { coins = state.crashKeyB.coins + 20 },
+				}
+			end)
+
+			local i = 0
+			while txCommitted == false and i < 2000 do -- Increased timeout for safety
+				i += 1
+				jest.advanceTimersByTime(1)
+			end
+			expect(txCommitted).toBe(true) -- Ensure the commit phase was reached
+
+			crash() -- Simulate crash
+			resetStore() -- Reset store to load from "disk"
+
+			store:load("crashKeyA")
+			store:load("crashKeyB")
+			jest.advanceTimersByTime(1000)
+
+			local dataA = store:get("crashKeyA"):expect()
+			local dataB = store:get("crashKeyB"):expect()
+			jest.advanceTimersByTime(1000)
+
+			expect(dataA.coins).toEqual(10)
+			expect(dataB.coins).toEqual(20)
+		end)
+	end)
 end)
