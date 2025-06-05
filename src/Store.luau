@@ -1030,7 +1030,7 @@ local function txInternal<T>(
 					for _, key in keys do
 						local session = self._sessions[key]
 						if session then -- Check if session still exists (e.g., wasn't closed due to lock loss during tx)
-							session:setData(nextState[key])
+							session:mutateKey(nextState[key])
 							session.changeSet = {} -- Reset changeset as data is now saved.
 						end
 					end

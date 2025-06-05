@@ -17,8 +17,8 @@ describe("tx", function()
 	local mockData
 	local mockMemory
 
-	local function resetStore()
-		store = Store.createStore({
+	local function resetStore(config: any?)
+		local storeConfig = {
 			name = "tx tests",
 			template = { coins = 0 },
 			dataStoreService = mockData,
@@ -26,7 +26,13 @@ describe("tx", function()
 			schema = function(data)
 				return typeof(data.coins) == "number", "Invalid data format"
 			end,
-		})
+		}
+		if config then
+			for k, v in config do
+				storeConfig[k] = v
+			end
+		end
+		store = Store.createStore(storeConfig)
 	end
 
 	local function crash()
@@ -320,6 +326,53 @@ describe("tx", function()
 		end)
 	end)
 
+	describe("changedCallbacks", function()
+		it("should call changed callbacks for keys modified in tx", function()
+			local mock, mockFn = jest.fn()
+			resetStore({
+				changedCallbacks = { mockFn },
+			})
+
+			store:load("cbKey1")
+			store:load("cbKey2")
+			jest.advanceTimersByTime(1000)
+
+			mock.mockClear() -- load calls changedCallbacks, clear before tx
+
+			store:tx({ "cbKey1", "cbKey2" }, function(state)
+				state.cbKey1.coins += 10
+				state.cbKey2.coins += 20
+				return true
+			end)
+
+			jest.advanceTimersByTime(1000)
+
+			expect(mock).toHaveBeenCalledTimes(2)
+			expect(mock).toHaveBeenCalledWith("cbKey1", { coins = 10 }, { coins = 0 })
+			expect(mock).toHaveBeenCalledWith("cbKey2", { coins = 20 }, { coins = 0 })
+		end)
+
+		it("should not call changed callbacks if no keys changed", function()
+			local mock, mockFn = jest.fn()
+			resetStore({
+				changedCallbacks = { mockFn },
+			})
+
+			store:load("noChangeKey")
+			jest.advanceTimersByTime(1000)
+
+			mock.mockClear() -- load calls changedCallbacks, clear before tx
+
+			store:tx({ "noChangeKey" }, function(state)
+				return true -- No changes
+			end)
+
+			jest.advanceTimersByTime(1000)
+
+			expect(mock).never.toHaveBeenCalled()
+		end)
+	end)
+
 	describe("txImmutable", function()
 		it("should successfully commit changes when transform returns a new state", function()
 			store:load("keyA")
@@ -594,6 +647,54 @@ describe("tx", function()
 
 			expect(dataA.coins).toEqual(10)
 			expect(dataB.coins).toEqual(20)
+		end)
+
+		describe("changedCallbacks", function()
+			it("should call changed callbacks for keys modified in txImmutable", function()
+				local mock, mockFn = jest.fn()
+				resetStore({
+					changedCallbacks = { mockFn },
+				})
+
+				store:load("cbKeyTxI1")
+				store:load("cbKeyTxI2")
+				jest.advanceTimersByTime(1000)
+
+				mock.mockClear() -- load calls changedCallbacks, clear before txImmutable
+
+				store:txImmutable({ "cbKeyTxI1", "cbKeyTxI2" }, function(state)
+					return {
+						cbKeyTxI1 = { coins = state.cbKeyTxI1.coins + 10 },
+						cbKeyTxI2 = { coins = state.cbKeyTxI2.coins + 20 },
+					}
+				end)
+
+				jest.advanceTimersByTime(1000)
+
+				expect(mock).toHaveBeenCalledTimes(2)
+				expect(mock).toHaveBeenCalledWith("cbKeyTxI1", { coins = 10 }, { coins = 0 })
+				expect(mock).toHaveBeenCalledWith("cbKeyTxI2", { coins = 20 }, { coins = 0 })
+			end)
+
+			it("should not call changed callbacks if no keys changed in txImmutable", function()
+				local mock, mockFn = jest.fn()
+				resetStore({
+					changedCallbacks = { mockFn },
+				})
+
+				store:load("noChangeKeyTxI")
+				jest.advanceTimersByTime(1000)
+
+				mock.mockClear() -- load calls changedCallbacks, clear before txImmutable
+
+				store:txImmutable({ "noChangeKeyTxI" }, function(state)
+					return state -- No changes
+				end)
+
+				jest.advanceTimersByTime(1000)
+
+				expect(mock).never.toHaveBeenCalled()
+			end)
 		end)
 	end)
 end)
