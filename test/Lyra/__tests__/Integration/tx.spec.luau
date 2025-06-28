@@ -468,8 +468,27 @@ describe("tx", function()
 			local key1NewData = key1Args[2]
 			local key1OldData = key1Args[3]
 
-			expect(key1NewData.inventory).never.toBe(key1OldData.inventory) -- Should be a new table
+			expect(key1NewData.inventory).toBe(key1OldData.inventory) -- Should be the same table
 			expect(key1NewData.inventory).toEqual({})
+			expect(key1OldData.inventory).toEqual({})
+
+			mock.mockClear()
+
+			store:tx({ "cbKeyTx1" }, function(state)
+				state.cbKeyTx1.inventory = { "item1", "item2" }
+				return true
+			end)
+
+			jest.advanceTimersByTime(1000)
+
+			expect(mock).toHaveBeenCalledTimes(1)
+
+			key1Args = mock.mock.calls[1]
+			key1NewData = key1Args[2]
+			key1OldData = key1Args[3]
+
+			expect(key1NewData.inventory).never.toBe(key1OldData.inventory) -- Should be a new table
+			expect(key1NewData.inventory).toEqual({ "item1", "item2" })
 			expect(key1OldData.inventory).toEqual({})
 		end)
 	end)

@@ -953,7 +953,7 @@ local function txInternal<T>(
 				end
 
 				-- Directly mutate the session state and let its normal save mechanism handle it.
-				self._sessions[key]:mutateKey(nextState[key])
+				self._sessions[key]:mutateKey(nextData)
 
 				return Promise.resolve(true)
 			end
