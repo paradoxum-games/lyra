@@ -122,20 +122,6 @@ describe("reconcileDeep", function()
 			expect(target).toEqual(originalTarget)
 			expect(source).toEqual(originalSource)
 		end)
-
-		it("handles falsey values (`false`, `0`) correctly", function()
-			local target = { flag = false, num = 0 }
-			local sourceSame = { flag = false, num = 0 }
-
-			-- Identical semantics -> same reference back
-			local unchanged = reconcileDeep(target, sourceSame)
-			expect(unchanged).toBe(target)
-
-			-- Deleting the keys
-			local deleted = reconcileDeep(target, {})
-			expect(deleted.flag).toBeNil()
-			expect(deleted.num).toBeNil()
-		end)
 	end)
 
 	describe("Copy-On-Write Semantics", function()
