@@ -24,7 +24,7 @@ describe("tx", function()
 			dataStoreService = mockData,
 			memoryStoreService = mockMemory,
 			schema = function(data)
-				return typeof(data.coins) == "number", "Invalid data format"
+				return typeof(data.coins) == "number"
 			end,
 		}
 		if config then
@@ -370,6 +370,107 @@ describe("tx", function()
 			jest.advanceTimersByTime(1000)
 
 			expect(mock).never.toHaveBeenCalled()
+		end)
+
+		it("should reconcile mutable updates with copy-on-write semantics", function()
+			local mock, mockFn = jest.fn()
+			resetStore({
+				changedCallbacks = { mockFn },
+				template = { coins = 0, inventory = {} },
+				schema = function(data)
+					return typeof(data.inventory) == "table" and typeof(data.coins) == "number"
+				end,
+			})
+
+			store:load("cbKeyTx1")
+			store:load("cbKeyTx2")
+			jest.advanceTimersByTime(1000)
+
+			mock.mockClear() -- load calls changedCallbacks, clear before txImmutable
+
+			store:tx({ "cbKeyTx1", "cbKeyTx2" }, function(state)
+				state.cbKeyTx1.coins = 50
+				state.cbKeyTx2.coins = 100
+				return true
+			end)
+			jest.advanceTimersByTime(1000)
+
+			expect(mock).toHaveBeenCalledTimes(2)
+
+			local key1Args = mock.mock.calls[1]
+			local key1NewData = key1Args[2]
+			local key1OldData = key1Args[3]
+
+			expect(key1NewData.inventory).toBe(key1OldData.inventory) -- Should be the same table
+			expect(key1NewData.inventory).toEqual({})
+			expect(key1OldData.inventory).toEqual({})
+
+			local key2Args = mock.mock.calls[2]
+			local key2NewData = key2Args[2]
+			local key2OldData = key2Args[3]
+
+			expect(key2NewData.inventory).toBe(key2OldData.inventory) -- Should be the same table
+			expect(key2NewData.inventory).toEqual({})
+			expect(key2OldData.inventory).toEqual({})
+
+			mock.mockClear() -- load calls changedCallbacks, clear before txImmutable
+
+			store:tx({ "cbKeyTx1", "cbKeyTx2" }, function(state)
+				state.cbKeyTx1.inventory = { "item1", "item2" }
+				state.cbKeyTx2.inventory = { "item3", "item4" }
+				return true
+			end)
+			jest.advanceTimersByTime(1000)
+
+			expect(mock).toHaveBeenCalledTimes(2)
+
+			key1Args = mock.mock.calls[1]
+			key1NewData = key1Args[2]
+			key1OldData = key1Args[3]
+
+			expect(key1NewData.inventory).never.toBe(key1OldData.inventory) -- Should be a new table
+			expect(key1NewData.inventory).toEqual({ "item1", "item2" })
+			expect(key1OldData.inventory).toEqual({})
+
+			key2Args = mock.mock.calls[2]
+			key2NewData = key2Args[2]
+			key2OldData = key2Args[3]
+
+			expect(key2NewData.inventory).never.toBe(key2OldData.inventory) -- Should be a new table
+			expect(key2NewData.inventory).toEqual({ "item3", "item4" })
+			expect(key2OldData.inventory).toEqual({})
+		end)
+
+		it("should reconcile mutable mutation in the single key changed case", function()
+			local mock, mockFn = jest.fn()
+			resetStore({
+				changedCallbacks = { mockFn },
+				template = { coins = 0, inventory = {} },
+				schema = function(data)
+					return typeof(data.inventory) == "table" and typeof(data.coins) == "number"
+				end,
+			})
+
+			store:load("cbKeyTx1")
+			jest.advanceTimersByTime(1000)
+
+			mock.mockClear() -- load calls changedCallbacks, clear before txImmutable
+
+			store:tx({ "cbKeyTx1" }, function(state)
+				state.cbKeyTx1.coins = 50
+				return true
+			end)
+			jest.advanceTimersByTime(1000)
+
+			expect(mock).toHaveBeenCalledTimes(1)
+
+			local key1Args = mock.mock.calls[1]
+			local key1NewData = key1Args[2]
+			local key1OldData = key1Args[3]
+
+			expect(key1NewData.inventory).never.toBe(key1OldData.inventory) -- Should be a new table
+			expect(key1NewData.inventory).toEqual({})
+			expect(key1OldData.inventory).toEqual({})
 		end)
 	end)
 

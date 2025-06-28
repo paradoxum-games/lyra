@@ -942,9 +942,19 @@ local function txInternal<T>(
 			elseif #changedKeys == 1 then
 				-- If only one key changed, treat it as a standard single-key update for efficiency.
 				logger:log("trace", `tx only changed one key ('{changedKeys[1]}'), treating as Session:update`)
+
 				local key = changedKeys[1]
+				local nextData = nextState[key]
+
+				if immutable == false then
+					-- If mutable, reconcile the data before mutating.
+					local currentData = currentState[key]
+					nextData = Tables.reconcileDeep(currentData, nextData)
+				end
+
 				-- Directly mutate the session state and let its normal save mechanism handle it.
 				self._sessions[key]:mutateKey(nextState[key])
+
 				return Promise.resolve(true)
 			end
 
@@ -1030,7 +1040,15 @@ local function txInternal<T>(
 					for _, key in keys do
 						local session = self._sessions[key]
 						if session then -- Check if session still exists (e.g., wasn't closed due to lock loss during tx)
-							session:mutateKey(nextState[key])
+							local nextData = nextState[key]
+
+							if immutable == false then
+								-- If mutable, reconcile the data before mutating.
+								local currentData = currentState[key]
+								nextData = Tables.reconcileDeep(currentData, nextData)
+							end
+
+							session:mutateKey(nextData)
 							session.changeSet = {} -- Reset changeset as data is now saved.
 						end
 					end
