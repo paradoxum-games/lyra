@@ -458,6 +458,52 @@ describe("Session", function()
 			expect(callback2Mock).toHaveBeenCalledTimes(1)
 			expect(order).toEqual({ 1, 2 })
 		end)
+
+		it("should reconcile mutable updates with copy-on-write semantics", function()
+			local callbackMock, callbackFn = jest.fn()
+			ctx.changedCallbacks = { callbackFn }
+
+			local session = getSession()
+			jest.advanceTimersByTime(1000)
+			callbackMock.mockClear()
+
+			session:update(function(data)
+				data.coins = 50
+				return true
+			end)
+			jest.advanceTimersByTime(1000)
+
+			expect(callbackMock).toHaveBeenCalledTimes(1)
+
+			local lastCall = callbackMock.mock.calls[1]
+			local newData = lastCall[2]
+			local oldData = lastCall[3]
+
+			expect(oldData.coins).toBe(0) -- Original coins
+			expect(newData.coins).toBe(50) -- Updated coins
+
+			expect(oldData).never.toBe(newData)
+			expect(oldData.inventory).toBe(newData.inventory) -- Inventory didn't change - should be the same address
+
+			session:update(function(data)
+				data.inventory.newItem = "testItem"
+				return true
+			end)
+			jest.advanceTimersByTime(1000)
+
+			expect(callbackMock).toHaveBeenCalledTimes(2)
+
+			lastCall = callbackMock.mock.calls[2]
+			newData = lastCall[2]
+			oldData = lastCall[3]
+
+			expect(oldData.coins).toBe(50) -- Previous coins
+			expect(newData.coins).toBe(50) -- Coins should remain unchanged
+
+			expect(newData.inventory.newItem).toBe("testItem")
+			expect(oldData.inventory).never.toBe(newData.inventory) -- Inventory should be a new table
+			expect(oldData.inventory.newItem).toBeNil() -- Old inventory should not have newItem
+		end)
 	end)
 
 	describe("error handling", function()

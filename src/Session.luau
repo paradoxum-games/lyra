@@ -1000,15 +1000,18 @@ local function updateInternal(
 			return reject(`Store:update schema validation failed: {err}`)
 		end
 
+		-- Ensure the new data is frozen
+		Tables.freezeDeep(nextData :: any)
+
 		-- Check if the data actually changed
 		if Tables.equalsDeep(nextData :: any, currentData :: any) then
 			logger:log("trace", "transform resulted in no data change, resolving true")
 			return resolve(true) -- Considered successful, but data remains same
 		end
 
-		-- TODO: If immutable is false, we should comb through the data and
-		-- reconstruct a proper copy-on-write structure to make change detecting
-		-- easier in `changedCallbacks`
+		if immutable == false then
+			nextData = Tables.reconcileDeep(currentData :: any, nextData :: any)
+		end
 
 		-- Data changed and is valid, apply the mutation
 		self:mutateKey(nextData)
