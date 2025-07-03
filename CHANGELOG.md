@@ -5,6 +5,8 @@
   * This 'immutable' flavor of API lets you avoid deep copying, but forces you to handle copy-on-write semantics yourself. Instead of returning `true` to commit a change, you return a new copy of the data containing the desired changes.
 * Removed `splitUtf8String` implementation in favor of a simpler implementation
 * BREAKING: Removed `disableReferenceProtection` in favor of smarter utilization of frozen tables
+* Changed changedCallbacks to reconcile mutable changes into a copy-on-write table, making nested change detection easier
+* Fixed t absolute requires
 
 ## 0.5.0-rc.0
 * Commented (almost) the entire codebase
