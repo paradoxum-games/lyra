@@ -11,7 +11,7 @@ Let's get Lyra set up in your game and cover the basics of saving player data.
 Add Lyra to your `wally.toml`:
 
 ```toml
-Lyra = "paradoxum-games/lyra@0.5.0-rc.0"
+Lyra = "paradoxum-games/lyra@0.6.0"
 ```
 
 :::tip
