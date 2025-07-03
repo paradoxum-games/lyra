@@ -1,3 +1,164 @@
+type TraceViewImpl = {
+	__index: TraceViewImpl,
+
+	new: (fullTrace: { TraceEvent }) -> TraceView,
+	filter: (self: TraceView, predicate: (event: TraceEvent) -> boolean) -> TraceView,
+	expand: (self: TraceView, nBefore: number, nAfter: number?) -> TraceView,
+	before: (self: TraceView, n: number) -> TraceView,
+	after: (self: TraceView, n: number) -> TraceView,
+	first: (self: TraceView) -> TraceView,
+	last: (self: TraceView) -> TraceView,
+	at: (self: TraceView, i: number) -> TraceView,
+	get: (self: TraceView) -> { TraceEvent },
+	count: (self: TraceView) -> number,
+	map: (self: TraceView, transformFn: (event: TraceEvent) -> any) -> { any },
+	groupBy: (self: TraceView, keyFn: (event: TraceEvent) -> any) -> { [any]: { TraceEvent } },
+	firstEvent: (self: TraceView) -> TraceEvent?,
+	lastEvent: (self: TraceView) -> TraceEvent?,
+}
+
+type TraceViewProps = {
+	_fullTrace: { TraceEvent },
+	_resultIndices: { number }, -- Indices of events in the full trace that match the current view
+}
+
+type TraceView = typeof(setmetatable({} :: TraceViewProps, {} :: TraceViewImpl))
+
+local TraceView = {} :: TraceViewImpl
+TraceView.__index = TraceView
+
+function TraceView.new(fullTrace): TraceView
+	local o = {
+		_fullTrace = fullTrace,
+		_resultIndices = {},
+	}
+	setmetatable(o, TraceView)
+	return o
+end
+
+-- Private helper to get an event by its index in the full trace
+function TraceView:_getEvent(index)
+	return self._fullTrace[index]
+end
+
+-- Chaining Methods (return self)
+
+function TraceView:filter(predicate): TraceView
+	local newIndices = {}
+	for _, index in self._resultIndices do
+		if predicate(self:_getEvent(index)) then
+			table.insert(newIndices, index)
+		end
+	end
+	self._resultIndices = newIndices
+	return self
+end
+
+function TraceView:expand(nBefore, nAfter): TraceView
+	-- If only one argument is given, use it for both before and after
+	nBefore = nBefore or 0
+	nAfter = nAfter or nBefore
+
+	if #self._resultIndices == 0 then
+		return self
+	end
+
+	local expandedSet = {} -- Use a set to handle overlaps automatically
+	local traceLen = #self._fullTrace
+
+	for _, index in self._resultIndices do
+		local startIndex = math.max(1, index - nBefore)
+		local endIndex = math.min(traceLen, index + nAfter)
+		for i = startIndex, endIndex do
+			expandedSet[i] = true
+		end
+	end
+
+	-- Convert the set back to a sorted list of indices
+	local newIndices = {}
+	for index in expandedSet do
+		table.insert(newIndices, index)
+	end
+	table.sort(newIndices)
+
+	self._resultIndices = newIndices
+	return self
+end
+
+function TraceView:before(n): TraceView
+	return self:expand(n, 0)
+end
+
+function TraceView:after(n): TraceView
+	return self:expand(0, n)
+end
+
+function TraceView:first(): TraceView
+	if #self._resultIndices > 0 then
+		self._resultIndices = { self._resultIndices[1] }
+	end
+	return self
+end
+
+function TraceView:last(): TraceView
+	if #self._resultIndices > 0 then
+		self._resultIndices = { self._resultIndices[#self._resultIndices] }
+	end
+	return self
+end
+
+function TraceView:at(i): TraceView
+	if self._resultIndices[i] then
+		self._resultIndices = { self._resultIndices[i] }
+	else
+		self._resultIndices = {}
+	end
+	return self
+end
+
+-- Terminating Methods (return data)
+
+function TraceView:get()
+	local results = {}
+	for _, index in self._resultIndices do
+		table.insert(results, self:_getEvent(index))
+	end
+	return results
+end
+
+function TraceView:count()
+	return #self._resultIndices
+end
+
+function TraceView:map(transformFn)
+	local results = {}
+	for _, index in self._resultIndices do
+		table.insert(results, transformFn(self:_getEvent(index)))
+	end
+	return results
+end
+
+function TraceView:groupBy(keyFn)
+	local groups = {}
+	for _, index in self._resultIndices do
+		local event = self:_getEvent(index)
+		local key = keyFn(event)
+		if not groups[key] then
+			groups[key] = {}
+		end
+		table.insert(groups[key], event)
+	end
+	return groups
+end
+
+function TraceView:firstEvent()
+	return self:first():get()[1]
+end
+
+function TraceView:lastEvent()
+	return self:last():get()[1]
+end
+
 type UniverseImpl = {
 	__index: UniverseImpl,
 
@@ -5,6 +166,7 @@ type UniverseImpl = {
 	_createPlayer: (self: Universe, userId: number) -> MockPlayer,
 	_traceEvent: (self: Universe, eventType: string, details: { [string]: any }?) -> (),
 	GetTrace: (self: Universe) -> { TraceEvent },
+	query: (self: Universe, where: (event: TraceEvent) -> boolean) -> TraceView,
 	_generateJobId: (self: Universe) -> string,
 	_getPlaceConfig: (self: Universe, placeId: number) -> PlaceConfig,
 	_matchmakePlayerToPlace: (self: Universe, placeId: number) -> string,
@@ -155,7 +317,9 @@ function Universe.new(config: UniverseConfig): Universe
 
 	self.servers = {}
 	self.serverCounter = 0
+
 	self.trace = {}
+	self.eventCounter = 0
 
 	return self
 end
@@ -172,16 +336,31 @@ function Universe:_createPlayer(userId: number): MockPlayer
 	}
 end
 
-function Universe:_traceEvent(eventType: string, details: { [string]: any }?)
-	table.insert(self.trace, {
+function Universe:_traceEvent(name: string, details: { [string]: any }?)
+	self.eventCounter = self.eventCounter + 1
+	local event = {
+		id = self.eventCounter,
 		time = os.clock(),
-		type = eventType,
+		name = name,
+		type = name,
 		details = details or {},
-	})
+	}
+	table.insert(self.trace, event)
+	return event
 end
 
 function Universe:GetTrace()
 	return self.trace
+end
+
+function Universe:query(predicate: (event: TraceEvent) -> boolean): TraceView
+	local view = TraceView.new(self.trace)
+	for i, event in self.trace do
+		if predicate(event) then
+			table.insert(view._resultIndices, i)
+		end
+	end
+	return view
 end
 
 function Universe:_generateJobId(): string

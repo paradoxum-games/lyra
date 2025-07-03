@@ -107,6 +107,7 @@ local Operations = {
 			universe:_traceEvent("DataOperation", {
 				type = "addCoins",
 				player = player.UserId,
+				UserId = player.UserId,
 				amount = coinsToAdd,
 				before = playerData.stagedData[player.UserId] and playerData.stagedData[player.UserId].coins,
 			})
@@ -121,6 +122,7 @@ local Operations = {
 						universe:_traceEvent("DataOperationComplete", {
 							type = "addCoins",
 							player = player.UserId,
+							UserId = player.UserId,
 							after = playerData.stagedData[player.UserId].coins,
 						})
 					end
@@ -136,6 +138,7 @@ local Operations = {
 			universe:_traceEvent("DataOperation", {
 				type = "removeCoins",
 				player = player.UserId,
+				UserId = player.UserId,
 				amount = coinsToRemove,
 				before = playerData.stagedData[player.UserId] and playerData.stagedData[player.UserId].coins,
 			})
@@ -151,6 +154,7 @@ local Operations = {
 						universe:_traceEvent("DataOperationComplete", {
 							type = "removeCoins",
 							player = player.UserId,
+							UserId = player.UserId,
 							after = playerData.stagedData[player.UserId].coins,
 						})
 					end
@@ -166,6 +170,7 @@ local Operations = {
 			universe:_traceEvent("DataOperation", {
 				type = "addItem",
 				player = player.UserId,
+				UserId = player.UserId,
 				itemId = itemId,
 			})
 			store
@@ -179,6 +184,7 @@ local Operations = {
 						universe:_traceEvent("DataOperationComplete", {
 							type = "addItem",
 							player = player.UserId,
+							UserId = player.UserId,
 							itemId = itemId,
 						})
 					end
@@ -193,6 +199,7 @@ local Operations = {
 			universe:_traceEvent("DataOperation", {
 				type = "getData",
 				player = player.UserId,
+				UserId = player.UserId,
 			})
 			store
 				:get(player)
@@ -200,6 +207,7 @@ local Operations = {
 					universe:_traceEvent("DataOperationComplete", {
 						type = "getData",
 						player = player.UserId,
+						UserId = player.UserId,
 						data = data,
 					})
 				end)
@@ -213,6 +221,7 @@ local Operations = {
 			universe:_traceEvent("DataOperation", {
 				type = "saveData",
 				player = player.UserId,
+				UserId = player.UserId,
 				data = playerData.stagedData[player.UserId],
 			})
 			store
@@ -222,6 +231,7 @@ local Operations = {
 					universe:_traceEvent("DataOperationComplete", {
 						type = "saveData",
 						player = player.UserId,
+						UserId = player.UserId,
 					})
 				end)
 				:await()
@@ -231,6 +241,9 @@ local Operations = {
 		name = "tradePlayers",
 		weight = 1,
 		execute = function(store, player, playerData, rand, universe, Players)
+			if store._store._sessions[tostring(player.UserId)] == nil then
+				return
+			end
 			local players = Players:GetPlayers()
 			if #players < 2 then
 				return
@@ -239,6 +252,9 @@ local Operations = {
 			local otherPlayers = table.clone(players)
 			table.remove(otherPlayers, table.find(otherPlayers, player))
 			local otherPlayer = otherPlayers[rand:NextInteger(1, #otherPlayers)]
+			if store._store._sessions[tostring(otherPlayer.UserId)] == nil then
+				return
+			end
 
 			universe:_traceEvent("DataOperation", {
 				type = "tradePlayers",
@@ -274,20 +290,6 @@ local Operations = {
 	},
 }
 
-local function prettyTrace(traces)
-	local result = ""
-	for _, entry in traces do
-		result = result
-			.. string.format(
-				"[%.2f] %s %s\n",
-				entry.time,
-				entry.type,
-				if entry.details then HttpService:JSONEncode(entry.details) else ""
-			)
-	end
-	return result
-end
-
 beforeEach(function()
 	jest.useFakeTimers()
 end)
@@ -297,7 +299,7 @@ afterEach(function()
 	jest.useRealTimers()
 end)
 
-describe.skip("PlayerStore chaos test", function()
+describe("PlayerStore chaos test", function()
 	local testData = {}
 	for _, seed in TestConfig.Seeds do
 		for _, duration in TestConfig.Durations do
@@ -450,14 +452,10 @@ describe.skip("PlayerStore chaos test", function()
 
 		jest.clearAllTimers()
 
-		print(universe.seed, #playerData.failures, #universe:GetTrace())
-		print("iterations: ", numIterations)
-
 		if #playerData.failures > 0 then
 			for _, failure in playerData.failures do
 				print(string.format("[%.2f] %s", failure.time, failure.error))
 			end
-			print(prettyTrace(universe:GetTrace()))
 		end
 
 		if #playerData.dataLossEvents > 0 then
