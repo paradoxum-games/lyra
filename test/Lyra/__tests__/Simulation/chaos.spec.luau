@@ -20,7 +20,7 @@ local TestConfig = {
 	Seeds = { 1, 2, 3 },
 	Durations = { 60 * 60 * 2, 60 * 60 * 4, 60 * 60 * 6 },
 	MaxPlayers = 20,
-	OperationInterval = 10,
+	OperationInterval = 15,
 
 	PlayerActivity = {
 		JoinChance = 0.1,
