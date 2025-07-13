@@ -8,9 +8,15 @@
 	Users of the library should typically only need to require this top-level module.
 ]=]
 
+local Types = require(script.Types)
 local Log = require(script.Log)
 local Migrations = require(script.Migrations)
-local PlayerStore = require(script.PlayerStore)
+local Store = require(script.Store)
+
+export type Store<T> = Store.StoreImpl<T>
+export type StoreConfig<T> = Store.StoreConfig<T>
+
+export type MigrationStep = Types.MigrationStep
 
 --[=[
 	Provides helper functions for creating common migration steps.

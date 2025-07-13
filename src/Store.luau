@@ -133,7 +133,7 @@ type ListVersionParams = {
 	pageSize: number?,
 }
 
-type StoreImpl<T> = {
+export type StoreImpl<T> = {
 	__index: StoreImpl<T>,
 
 	-- Internal helper methods
