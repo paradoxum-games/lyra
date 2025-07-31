@@ -215,7 +215,7 @@ end
 	@return Promise<T> -- Resolves with the player's data
 	@within PlayerStore
 ]=]
-function PlayerStore:get(player: Player)
+function PlayerStore:get<T>(player: Player): Promise.TPromise<T>
 	local userIdKey = getUserIdKey(player)
 	return self._store:get(userIdKey)
 end
@@ -226,7 +226,7 @@ end
 	See [PlayerStore:get]
 	@yields
 ]=]
-function PlayerStore:getAsync(player: Player)
+function PlayerStore:getAsync<T>(player: Player): Promise.TPromise<T>
 	return self:get(player):expect()
 end
 
@@ -279,7 +279,7 @@ end
 	@return Promise<boolean> -- Resolves when the update is complete, with a boolean indicating success
 	@within PlayerStore
 ]=]
-function PlayerStore:unload(player: Player)
+function PlayerStore:unload(player: Player): Promise.TPromise<boolean>
 	local userIdKey = getUserIdKey(player)
 	return self._store:unload(userIdKey)
 end
@@ -311,10 +311,10 @@ end
 	@error "Key not loaded" -- The player's data hasn't been loaded
 	@error "Store is closed" -- The store has been closed
 	@error "Schema validation failed" -- The transformed data failed schema validation
-	@return Promise -- Resolves when the update is complete
+	@return Promise<boolean> -- Resolves when the update is complete, with the boolean returned by the transformFunction
 	@within PlayerStore
 ]=]
-function PlayerStore:update<T>(player: Player, transformFunction: (data: T) -> boolean)
+function PlayerStore:update<T>(player: Player, transformFunction: (data: T) -> boolean): Promise.TPromise<boolean>
 	local userIdKey = getUserIdKey(player)
 	return self._store:update(userIdKey, transformFunction)
 end
@@ -325,7 +325,7 @@ end
 	See [PlayerStore:update]
 	@yields
 ]=]
-function PlayerStore:updateAsync<T>(player: Player, transformFunction: (data: T) -> boolean)
+function PlayerStore:updateAsync<T>(player: Player, transformFunction: (data: T) -> boolean): boolean
 	return self:update(player, transformFunction):expect()
 end
 
@@ -345,7 +345,7 @@ end
 	@error "Key not loaded" -- The player's data hasn't been loaded
 	@error "Store is closed" -- The store has been closed
 	@error "Schema validation failed" -- The transformed data failed schema validation
-	@return Promise -- Resolves when the update is complete
+	@return Promise<boolean> -- Resolves when the update is complete, with the boolean returned by the transformFunction
 	@within PlayerStore
 ]=]
 function PlayerStore:updateImmutable<T>(
@@ -362,7 +362,7 @@ end
 	See [PlayerStore:updateImmutable]
 	@yields
 ]=]
-function PlayerStore:updateImmutableAsync<T>(player: Player, transformFunction: (data: T) -> T | false)
+function PlayerStore:updateImmutableAsync<T>(player: Player, transformFunction: (data: T) -> T | false): boolean
 	return self:updateImmutable(player, transformFunction):expect()
 end
 
@@ -385,7 +385,7 @@ end
 	@error "Key not loaded" -- One or more players' data hasn't been loaded
 	@error "Store is closed" -- The store has been closed
 	@error "Schema validation failed" -- The transformed data failed schema validation
-	@return Promise -- Resolves with `true` if the transaction was successful, or `false` if it was aborted. Rejects on error.
+	@return Promise<boolean> -- Resolves with `true` if the transaction was successful, or `false` if it was aborted. Rejects on error.
 	@within PlayerStore
 ]=]
 function PlayerStore:tx<T>(
@@ -433,7 +433,7 @@ end
 	See [PlayerStore:tx]
 	@yields
 ]=]
-function PlayerStore:txAsync<T>(players: { Player }, transformFunction: (state: { [Player]: T }) -> boolean)
+function PlayerStore:txAsync<T>(players: { Player }, transformFunction: (state: { [Player]: T }) -> boolean): boolean
 	return self:tx(players, transformFunction):expect()
 end
 
@@ -457,7 +457,7 @@ end
 	@error "Key not loaded" -- One or more players' data hasn't been loaded
 	@error "Store is closed" -- The store has been closed
 	@error "Schema validation failed" -- The transformed data failed schema validation
-	@return Promise -- Resolves with `true` if the transaction was successful, or `false` if it was aborted. Rejects on error.
+	@return Promise<boolean> -- Resolves with `true` if the transaction was successful, or `false` if it was aborted. Rejects on error.
 	@within PlayerStore
 ]=]
 function PlayerStore:txImmutable<T>(
@@ -508,7 +508,7 @@ end
 function PlayerStore:txImmutableAsync<T>(
 	players: { Player },
 	transformFunction: (state: { [Player]: T }) -> { [Player]: T } | false
-)
+): boolean
 	return self:txImmutable(players, transformFunction):expect()
 end
 
