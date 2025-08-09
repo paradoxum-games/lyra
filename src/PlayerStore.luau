@@ -108,6 +108,7 @@ type PlayerStoreProps<T> = {
 	.logCallback ((logMessage: LogMessage) -> ())? -- Optional callback for log messages
 	.memoryStoreService MemoryStoreService? -- Optional MemoryStoreService instance for mocking
 	.dataStoreService DataStoreService? -- Optional DataStoreService instance for mocking
+	.useMock boolean? -- If true (and running in Studio), uses mock in-memory implementations of DataStoreService and MemoryStoreService instead of the actual Roblox services. Useful for testing in a controlled environment. Defaults to `false`.
 
 	@within PlayerStore
 ]=]
@@ -121,6 +122,7 @@ type PlayerStoreConfig<T> = {
 	logCallback: ((logMessage: Log.LogMessage) -> ())?,
 	memoryStoreService: MemoryStoreService?,
 	dataStoreService: DataStoreService?,
+	useMock: boolean?,
 }
 
 type PlayerStore<T> = typeof(setmetatable({} :: PlayerStoreProps<T>, {} :: PlayerStoreImpl<T>))
@@ -177,6 +179,7 @@ local function createPlayerStore<T>(config: PlayerStoreConfig<T>): PlayerStore<T
 		end,
 		memoryStoreService = config.memoryStoreService,
 		dataStoreService = config.dataStoreService,
+		useMock = config.useMock,
 	}
 
 	local store = Store.createStore(storeConfig)
