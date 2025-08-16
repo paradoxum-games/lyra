@@ -19,7 +19,7 @@ Here's a basic example:
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Network = require(ReplicatedStorage.Network)
 
-local function syncWithClient(key: string, newData, oldData)
+local function syncWithClient(key: string, oldData, newData)
     local player = Players:GetPlayerByUserId(tonumber(key))
     if not player then return end
 
