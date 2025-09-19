@@ -254,5 +254,5 @@ dependencies = []
 
 [[package]]
 name = "paradoxum-games/lyra"
-version = "0.4.1"
+version = "0.6.0"
 dependencies = [["Promise", "evaera/promise@4.0.0"], ["t", "osyrisrblx/t@3.1.1"], ["Jest", "jsdotlua/jest@3.10.0"], ["JestGlobals", "jsdotlua/jest-globals@3.10.0"]]

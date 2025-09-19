@@ -3,6 +3,26 @@ gitRepoUrl = "https://github.com/paradoxum-games/lyra"
 gitSourceBranch = "main"
 changelog = true
 
+[[classOrder]]
+classes = ["PlayerStore", "Lyra"]
+
+[[classOrder]]
+section = "Internal"
+classes = [
+	"Store",
+	"Session",
+	"Locks",
+	"Constants",
+	"Files",
+	"Log",
+	"PromiseQueue",
+	"Types",
+	"Transactions",
+	"Migrations",
+	"hashMapRetry",
+	"dataStoreRetry",
+]
+
 [docusaurus]
 onBrokenLinks = "throw"
 onBrokenMarkdownLinks = "warn"

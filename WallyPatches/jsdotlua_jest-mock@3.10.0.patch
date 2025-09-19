@@ -1,0 +1,13 @@
+diff --git a/jest-mock/src/init.lua b/jest-mock/src/init.lua
+index a18c187..f83d840 100644
+--- a/jest-mock/src/init.lua
++++ b/jest-mock/src/init.lua
+@@ -282,7 +282,7 @@ function ModuleMockerClass:_makeComponent(metadata: any, restore)
+ 				mockResult.type = "throw"
+ 				mockResult.value = result
+ 
+-				error(result)
++				error(result, 0)
+ 			end
+ 
+ 			mockResult.type = "return"

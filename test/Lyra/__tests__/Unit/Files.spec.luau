@@ -257,4 +257,27 @@ describe("Files", function()
 			return expect(promise).rejects.toMatch("Missing shard")
 		end)
 	end)
+
+	describe("utf8", function()
+		it("should correctly encode and decode UTF-8 strings", function()
+			local data = "Hello, 你好, مرحبا"
+			local filePromise = Files.write({
+				store = store,
+				data = data,
+				maxShardSize = 10,
+				key = "testKey",
+			})
+
+			jest.runAllTimers()
+
+			local promise = Files.read({
+				store = store,
+				file = filePromise:expect(),
+			})
+
+			jest.runAllTimers()
+
+			return expect(promise).resolves.toEqual(data)
+		end)
+	end)
 end)

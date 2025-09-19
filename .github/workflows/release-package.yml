@@ -7,7 +7,7 @@ on:
 
 jobs:
     release:
-        runs-on: [self-hosted, Linux]
+        runs-on: [ubuntu-latest]
         permissions:
             contents: write
             packages: write
@@ -16,16 +16,6 @@ jobs:
 
             - name: Install Rokit
               uses: CompeyDev/setup-rokit@v0.1.2
-
-            - uses: actions/setup-node@v4
-              with:
-                  node-version: '18'
-                  registry-url: 'https://npm.pkg.github.com'
-                  scope: '@paradoxum-games'
-                  cache: 'npm'
-
-            - name: Install dependencies
-              run: npm ci
 
             - name: Build Package
               run: rojo build --output Lyra.rbxm build.project.json
@@ -39,11 +29,6 @@ jobs:
               run: gh release upload $GITHUB_REF_NAME Lyra.rbxm
               env:
                   GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
-
-            - name: Publish to GitHub Packages
-              run: npm publish
-              env:
-                  NODE_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
     docs:
         needs: release

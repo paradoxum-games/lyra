@@ -1,6 +1,8 @@
---- a/DevPackages/_Index/jsdotlua_jest-fake-timers@3.10.0/jest-fake-timers/src/init.lua
-+++ b/DevPackages/_Index/jsdotlua_jest-fake-timers@3.10.0/jest-fake-timers/src/init.lua
-@@ -235,6 +235,7 @@
+diff --git a/jest-fake-timers/src/init.lua b/jest-fake-timers/src/init.lua
+index 0d2ee6c..5a9de88 100644
+--- a/jest-fake-timers/src/init.lua
++++ b/jest-fake-timers/src/init.lua
+@@ -235,6 +235,7 @@ local function fakeDelay(self, delayTime, callback, ...): Timeout
  	local delayTimeMs = (self._engineFrameTime / 1000) + delayTime * 1000
  	local targetTime = self._mockTimeMs + delayTimeMs
  	local timeout = {
@@ -8,7 +10,7 @@
  		time = targetTime,
  		callback = callback,
  		args = { ... },
-@@ -254,10 +255,18 @@
+@@ -254,10 +255,18 @@ local function fakeDelay(self, delayTime, callback, ...): Timeout
  	return timeout
  end
  
@@ -31,7 +33,7 @@
  			break
  		end
  	end
-@@ -266,7 +275,14 @@
+@@ -266,7 +275,14 @@ end
  local function fakeWait(self, timeToWait: number?)
  	local running = coroutine.running()
  	local clock = fakeClock(self)

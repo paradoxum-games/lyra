@@ -1,8 +1,20 @@
---!strict
-
 --[=[
-	A Store coordinates Sessions and provides a safe way to interact with persistent data.
+	@class Store
+	@private
 
+	Coordinates Sessions and provides a safe, high-level API for interacting with
+	persistent data stored in Roblox DataStores and MemoryStores.
+
+	**Core Responsibilities:**
+	- Manages the lifecycle of `Session` objects for individual data keys (e.g., player IDs).
+	- Provides methods for loading, reading (`get`), updating (`update`), and saving data.
+	- Implements atomic multi-key transactions (`tx`).
+	- Handles data validation, migrations, and optional legacy data import.
+	- Abstracts away underlying complexities like data sharding (`Files`), distributed
+	  locking (`Locks`), and transaction coordination (`Transactions`).
+	- Integrates with a configurable logging system (`Log`).
+
+	**Usage Example:**
 	```lua
 	local store = Store.createStore({
 		name = "PlayerData",
@@ -11,9 +23,10 @@
 			items = {},
 		},
 		schema = function(data)
-			return typeof(data.coins) == "number" and typeof(data.items) == "table", 
+			return typeof(data.coins) == "number" and typeof(data.items) == "table",
 			"Invalid data format"
 		end,
+		-- ... other config options
 	})
 
 	-- Load data for a player
@@ -22,7 +35,7 @@
 		return store:get("player_1")
 	end):andThen(function(data)
 		print(data.coins) -- 0
-		
+
 		-- Update data
 		return store:update("player_1", function(data)
 			data.coins += 100
@@ -30,14 +43,11 @@
 		end)
 	end)
 	```
-
-	@class Store
 ]=]
 
 local DataStoreService = game:GetService("DataStoreService")
 local HttpService = game:GetService("HttpService")
 local MemoryStoreService = game:GetService("MemoryStoreService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Constants = require(script.Parent.Constants)
@@ -52,41 +62,37 @@ local PromiseQueue = require(script.Parent.PromiseQueue)
 local Transactions = require(script.Parent.Transactions)
 local Promise = require(script.Parent.Promise)
 local Tables = require(script.Parent.Tables)
-local t = require(ReplicatedStorage.Packages.t)
 local Types = require(script.Parent.Types)
 local dataStoreRetry = require(script.Parent.dataStoreRetry)
 local noYield = require(script.Parent.noYield)
+local t = require(script.Parent.Parent.t)
 
 --[=[
-	Configuration for creating a new Store.
+	Configuration options for creating a new Store instance using `createStore`.
 
 	@interface StoreConfig
-	.name string -- Name of the store
-	.template T -- Template/default value for new data
-	.schema (value: any) -> (boolean, string?) -- Validates data format
-	.migrationSteps? { MigrationStep } -- Steps to migrate old data formats
-	.importLegacyData? (key: string) -> any? -- Function to import legacy data
-	.dataStoreService? DataStoreService -- Custom DataStore implementation
-	.useMock? boolean -- Use mock DataStore (Studio only)
-	.changedCallbacks? { (key: string, newData: T, oldData: T?) -> () } -- Run when data changes
-	.logCallback? (logMessage: LogMessage) -> () -- Custom logging function
-	.onLockLost? (key: string) -> () -- Called if DataStore lock is lost
-
-	Example usage:
-	```lua
-	local config: StoreConfig<PlayerData> = {
-		name = "PlayerData",
-		template = {
-			coins = 0,
-			items = {},
-		},
-		schema = function(value)
-			return typeof(value.coins) == "number", "coins must be a number"
-		end,
-	}
-	```
-
 	@within Store
+	.name string -- A unique name for this store (e.g., "PlayerDataProd"). Used for logging and deriving DataStore/MemoryStore keys.
+
+	.template T -- A deep copyable Luau table/value representing the default state for a new key.
+
+	.schema (value: any) -> (boolean, string?) -- A validation function (e.g., created with `t`) that checks if data conforms to the expected structure. Returns `true` if valid, or `false` and an error message if invalid.
+
+	.migrationSteps {Types.MigrationStep}? -- An optional ordered list of migration steps to apply to data loaded from the DataStore if its schema is older than the current version. See `Migrations.luau`.
+
+	.importLegacyData ((key: string) -> any?)? -- An optional function to load data from a different, legacy storage system when a key is accessed for the first time and doesn't exist in this store.
+
+	.dataStoreService DataStoreService? -- An optional override for the Roblox DataStoreService. Useful for testing or custom storage implementations. Defaults to `game:GetService("DataStoreService")`.
+
+	.memoryStoreService MemoryStoreService? -- An optional override for the Roblox MemoryStoreService. Useful for testing. Defaults to `game:GetService("MemoryStoreService")`.
+
+	.useMock boolean? -- If true (and running in Studio), uses mock in-memory implementations of DataStoreService and MemoryStoreService instead of the actual Roblox services. Useful for testing in a controlled environment. Defaults to `false`.
+
+	.changedCallbacks { (key: string, newData: T, oldData: T?) -> () }? -- An optional list of functions called *after* data for a key has been successfully updated. Provides the key, the new data state, and the previous data state (if available).
+
+	.logCallback ((logMessage: Log.LogMessage) -> ())? -- A function to receive log messages generated by this Store instance and its components. If omitted, logs are discarded. See [Log].
+
+	.onLockLost ((key: string) -> ())? -- An optional callback function triggered if the distributed lock for a key's session is lost unexpectedly (e.g., due to expiration or external interference). This usually indicates the session is no longer safe to use.
 ]=]
 export type StoreConfig<T> = {
 	name: string,
@@ -97,10 +103,9 @@ export type StoreConfig<T> = {
 	dataStoreService: DataStoreService?,
 	memoryStoreService: MemoryStoreService?,
 	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () }?,
-	logCallback: ((logMessage: Types.LogMessage) -> ())?,
+	logCallback: ((logMessage: Log.LogMessage) -> ())?,
 	onLockLost: ((key: string) -> ())?,
 	useMock: boolean?,
-	disableReferenceProtection: boolean?,
 }
 local storeConfigCheck = t.strictInterface({
 	name = t.string,
@@ -117,9 +122,9 @@ local storeConfigCheck = t.strictInterface({
 	logCallback = t.optional(t.callback),
 	onLockLost = t.optional(t.callback),
 	useMock = t.optional(t.boolean),
-	disableReferenceProtection = t.optional(t.boolean),
 })
 
+-- Parameters for the listVersions method. Mirrors DataStore:ListVersionsAsync parameters.
 type ListVersionParams = {
 	key: string,
 	sortDirection: Enum.SortDirection?,
@@ -131,47 +136,67 @@ type ListVersionParams = {
 type StoreImpl<T> = {
 	__index: StoreImpl<T>,
 
+	-- Internal helper methods
 	_withSession: (self: Store<T>, key: string, callback: (session: Session.Session<any>) -> ()) -> Promise.Promise,
 	_getKeyInfo: (self: Store<T>, key: string) -> Promise.TPromise<DataStoreKeyInfo?>,
 
+	-- Core public API (Promise-based)
 	load: (self: Store<T>, key: string, userIds: { number }?) -> Promise.Promise,
 	unload: (self: Store<T>, key: string) -> Promise.Promise,
 	get: (self: Store<T>, key: string) -> Promise.TPromise<T>,
 	update: (self: Store<T>, key: string, transformFunction: (data: T) -> boolean) -> Promise.TPromise<boolean>,
+	updateImmutable: (
+		self: Store<T>,
+		key: string,
+		transformFunction: (data: T) -> T | false
+	) -> Promise.TPromise<boolean>,
 	tx: (
 		self: Store<T>,
 		keys: { string },
 		transformFunction: (state: { [string]: T }) -> boolean
-	) -> Promise.Promise,
+	) -> Promise.TPromise<boolean>,
+	txImmutable: (
+		self: Store<T>,
+		keys: { string },
+		transformFunction: (state: { [string]: T }) -> { [string]: T } | false
+	) -> Promise.TPromise<boolean>,
 	save: (self: Store<T>, key: string) -> Promise.Promise,
 	close: (self: Store<T>) -> Promise.Promise,
 
-	peek: (self: Store<T>, key: string) -> Promise.TPromise<T>,
+	-- Utility/Inspection API (Promise-based)
+	peek: (self: Store<T>, key: string) -> Promise.TPromise<T?>,
 	probeLockActive: (self: Store<T>, key: string) -> Promise.TPromise<boolean>,
 	listVersions: (self: Store<T>, params: ListVersionParams) -> Promise.TPromise<DataStoreVersionPages>,
 	readVersion: (self: Store<T>, key: string, version: string) -> Promise.TPromise<T, DataStoreKeyInfo>,
 
+	-- Core public API (Async/Await syntactic sugar)
 	loadAsync: (self: Store<T>, key: string, userIds: { number }?) -> (),
 	unloadAsync: (self: Store<T>, key: string) -> (),
 	getAsync: (self: Store<T>, key: string) -> T,
 	updateAsync: (self: Store<T>, key: string, transformFunction: (data: T) -> boolean) -> boolean,
+	updateImmutableAsync: (self: Store<T>, key: string, transformFunction: (data: T) -> T | false) -> boolean,
 	txAsync: (self: Store<T>, keys: { string }, transformFunction: (state: { [string]: T }) -> boolean) -> (),
+	txImmutableAsync: (
+		self: Store<T>,
+		keys: { string },
+		transformFunction: (state: { [string]: T }) -> T | false
+	) -> boolean,
 	saveAsync: (self: Store<T>, key: string) -> (),
 	closeAsync: (self: Store<T>) -> (),
 
-	peekAsync: (self: Store<T>, key: string) -> T,
+	-- Utility/Inspection API (Async/Await syntactic sugar)
+	peekAsync: (self: Store<T>, key: string) -> T?,
 	probeLockActiveAsync: (self: Store<T>, key: string) -> boolean,
 	listVersionsAsync: (self: Store<T>, params: ListVersionParams) -> DataStoreVersionPages,
 	readVersionAsync: (self: Store<T>, key: string, version: string) -> (T, DataStoreKeyInfo),
 }
 
 type StoreProps<T> = {
-	_ctx: Types.StoreContext<T>,
-	_closed: boolean,
-	_sessions: { [string]: Session.Session<T> },
-	_lastTxId: string?,
-	_loadPromises: { [string]: Promise.Promise },
-	_unloadPromises: { [string]: Promise.Promise },
+	_ctx: Types.StoreContext<T>, -- Shared context containing config and dependencies.
+	_closed: boolean, -- Flag indicating if the store has been closed.
+	_sessions: { [string]: Session.Session<T> }, -- Map of active sessions, keyed by data key.
+	_loadPromises: { [string]: Promise.Promise }, -- Tracks ongoing load operations to prevent duplicates.
+	_unloadPromises: { [string]: Promise.Promise }, -- Tracks ongoing unload operations.
 }
 
 export type Store<T> = typeof(setmetatable({} :: StoreProps<T>, {} :: StoreImpl<T>))
@@ -180,38 +205,14 @@ local Store: StoreImpl<any> = {} :: StoreImpl<any>
 Store.__index = Store
 
 --[=[
-	Creates a new Store with the given configuration.
+	Factory function to create a new Store instance.
 
-	```lua
-	local store = Store.createStore({
-		name = "PlayerData",
-		template = { coins = 0 },
-		schema = function(data)
-			return typeof(data.coins) == "number", "coins must be a number"
-		end,
-		
-		-- Optional: Runs whenever data changes
-		changedCallbacks = {
-			function(key, newData, oldData)
-				print(key, "changed from", oldData.coins, "to", newData.coins)
-			end,
-		},
+	Initializes the store context, sets up DataStore and MemoryStore connections
+	(real or mock), validates the template schema, and returns the configured Store object.
 
-		-- Optional: Called if lock is lost during session
-		onLockLost = function(key)
-			warn("Lost lock for", key)
-		end,
-	})
-	```
-
-	:::caution
-	If schema validation fails at any point, operations will be rejected with the error message.
-	:::
-
-	@param config StoreConfig<T> -- Configuration for the store
-	@return Store<T>
 	@within Store
-	@function createStore
+	@param config StoreConfig<T> -- Configuration options for the store.
+	@return Store<T> -- A new, initialized Store instance.
 ]=]
 local function createStore<T>(config: StoreConfig<T>): Store<T>
 	assert(storeConfigCheck(config))
@@ -222,6 +223,8 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 	})
 
 	logger:log("debug", `creating store`)
+
+	-- Determine which DataStoreService implementation to use (real, mock, or custom).
 	local dataStoreService = config.dataStoreService
 	if dataStoreService == nil then
 		if config.useMock then
@@ -233,8 +236,9 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 			dataStoreService = DataStoreService
 		end
 	end
-	assert(dataStoreService, "luau")
+	assert(dataStoreService, "luau") -- Forcefully narrowing type due to old type solver limitations
 
+	-- Determine which MemoryStoreService implementation to use (real, mock, or custom).
 	local memoryStoreService = config.memoryStoreService
 	if memoryStoreService == nil then
 		if config.useMock then
@@ -246,10 +250,11 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 			memoryStoreService = MemoryStoreService
 		end
 	end
-	assert(memoryStoreService, "luau")
+	assert(memoryStoreService, "luau") -- Forcefully narrowing type due to old type solver limitations
 
 	local migrationSteps = config.migrationSteps or {}
 
+	-- Assemble the StoreContext object, which bundles all dependencies and config.
 	local storeContext: Types.StoreContext<T> = {
 		name = config.name,
 		template = config.template,
@@ -265,24 +270,23 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		logger = logger,
 		onLockLost = config.onLockLost,
 
+		-- Get specific DataStore/MemoryStore instances using derived names/scopes.
 		recordStore = dataStoreService:GetDataStore(`{Constants.RECORD_SCOPE}/{config.name}`),
 		shardStore = dataStoreService:GetDataStore(`{Constants.SHARD_SCOPE}/{config.name}`),
 		txStore = dataStoreService:GetDataStore(`{Constants.TX_SCOPE}/{config.name}`),
 		lockHashMap = memoryStoreService:GetHashMap(`{Constants.LOCK_SCOPE}/{config.name}`),
-
-		disableReferenceProtection = config.disableReferenceProtection or false,
 	}
 
+	-- Validate that the provided template data conforms to the schema.
 	local ok, err = storeContext.schema(storeContext.template)
 	if not ok then
-		error(`Failed to validate template: {err}`)
+		error(`Failed to validate template for store '{config.name}': {err}`)
 	end
 
 	local self = setmetatable({
 		_ctx = storeContext,
 		_closed = false,
 		_sessions = {},
-		_lastTxId = nil,
 		_loadPromises = {},
 		_unloadPromises = {},
 	}, Store)
@@ -291,22 +295,58 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 	return self
 end
 
+--[[
+	Handling Concurrent Load and Unload Requests:
+
+	The `load` and `unload` methods manage the state of data associated with a
+	specific key (like a player ID). Because these operations can be called
+	close together or even overlap for the same key, the Store implements
+	specific rules to ensure data consistency and prevent conflicts:
+
+	- **Loading a Key:**
+	    - If you try to `load` a key that's *already loading*, the second `load`
+	      request is rejected ("Load already in progress"). You should only
+	      initiate one load at a time per key, as concurrent loads often
+	      indicate a logic issue.
+	    - If you try to `load` a key that's *currently unloading*, the `load`
+	      request will patiently wait until the unload process is completely
+	      finished before it starts acquiring the lock and loading the data.
+	    - If you try to `load` a key that's *already loaded* and ready (and not
+	      unloading), the request completes instantly without doing anything.
+
+	- **Unloading a Key:**
+	    - If you try to `unload` a key that's *currently loading*, the `unload`
+	      request takes priority. It immediately cancels the ongoing load
+	      operation (preventing the session from being fully created) and
+	      finishes quickly. This avoids creating a session only to tear it down
+	      immediately.
+	    - If you try to `unload` a key that's *already unloading*, the second
+	      `unload` request simply waits for the first one to finish.
+	    - If you try to `unload` a key that's *already unloaded* (or was never
+	      loaded), the request completes instantly without doing anything.
+
+	These rules, managed internally using promise tracking (`_loadPromises`,
+	`_unloadPromises`), guarantee that operations happen in a safe, predictable
+	order. They prevent race conditions like those introduced by players joining
+	and leaving quickly.
+]]
+
 --[=[
-	Loads data for the given key into memory and establishes a session.
-	Must be called before using any other methods with this key.
+	Acquires a distributed lock, loads data for the given key into memory, 
+	and establishes a `Session` object to manage the key's state.
 
-	```lua
-	store:load("player_1"):andThen(function()
-		print("Data loaded!")
-	end):catch(function(err)
-		warn("Failed to load:", err)
-	end)
-	```
+	This must be called before performing operations like `get`, `update`, or `save`
+	on the key. It handles concurrent load attempts and waits for any ongoing unload
+	operations to complete first.
 
-	@error "Load already in progress" -- Another load is already in progress for this key
-	@error "Store is closed" -- The store has been closed
-	@return Promise -- Resolves when data is loaded
-	@within Store 
+	Propagates errors from `Session.load` (e.g., lock acquisition failure, DataStore errors).
+	
+	@within Store
+	@param key string -- The unique identifier for the data to load (e.g., "player_123").
+	@param userIds {number}? -- Optional list of UserIDs for DataStore key tagging.
+	@return Promise -- Resolves when the data is successfully loaded and the session is ready, or rejects on error.
+	@error "Load already in progress" -- If `load` is called again for the same key while a previous load is still running.
+	@error "Store is closed" -- If the store instance has been closed via `close()`.
 ]=]
 function Store:load(key: string, userIds: { number }?): Promise.Promise
 	assert(t.string(key))
@@ -315,21 +355,27 @@ function Store:load(key: string, userIds: { number }?): Promise.Promise
 	local logger = self._ctx.logger:extend({ method = "load", key = key })
 	logger:log("trace", "attempting to load key")
 
+	-- Prevent operations if the store is closed.
 	if self._closed then
 		logger:log("warn", "attempted to load key while store is closed")
 		return Promise.reject("Store is closed")
 	end
 
+	-- If a session exists and isn't currently unloading, it's already loaded.
 	if self._sessions[key] and not self._unloadPromises[key] then
 		logger:log("trace", "key is already loaded")
 		return Promise.resolve()
 	end
 
+	-- Prevent concurrent load attempts for the same key.
 	if self._loadPromises[key] then
 		logger:log("trace", "key is currently being loaded")
+		-- We reject instead of returning the existing promise because load
+		-- being called more than once on the same key indicates a code smell or bug.
 		return Promise.reject("Load already in progress")
 	end
 
+	-- If an unload is in progress, wait for it to finish before starting the load.
 	local waitForUnload = Promise.try(function()
 		local unloadPromise = self._unloadPromises[key]
 		if unloadPromise then
@@ -338,51 +384,61 @@ function Store:load(key: string, userIds: { number }?): Promise.Promise
 		end
 	end)
 
-	local params = {
+	local sessionLoadParams = {
 		storeContext = self._ctx,
 		key = key,
 		userIds = userIds,
 	}
-	local loadPromise = waitForUnload:andThenCall(Session.load, params):andThen(function(session)
+	-- Chain the actual session loading after the potential unload wait.
+	local loadPromise = waitForUnload:andThenCall(Session.load, sessionLoadParams):andThen(function(session)
+		-- Check if the store was closed *while* this load was in progress.
 		if self._closed then
-			logger:log("warn", "store closed before key loaded")
-
+			logger:log("warn", "store closed before key loaded, unloading immediately")
+			-- If closed, immediately start unloading the session that was just loaded.
 			self._unloadPromises[key] = session:unload():finally(function()
-				logger:log("trace", "key unloaded")
+				logger:log("trace", "key unloaded after store closed during load")
 				self._unloadPromises[key] = nil
 			end)
-
 			return Promise.reject("Store closed before key loaded")
 		end
+
+		-- Session was loaded successfully; let's store it, start autosaving,
+		-- and set up lock loss handling.
 
 		self._sessions[key] = session
 
 		session:startAutosaving()
+
 		session.lockHandle.onLockLost(function()
+			logger:log("warn", "lock lost for key, removing session")
 			if self._ctx.onLockLost then
-				self._ctx.onLockLost(key)
+				-- Use pcall as user callback could error.
+				pcall(self._ctx.onLockLost, key)
 			end
+			-- Remove the session as it's no longer valid without the lock.
 			self._sessions[key] = nil
 		end)
+		logger:log("debug", "key loaded successfully")
 	end)
 
+	-- Store the load promise to handle concurrent calls.
 	self._loadPromises[key] = loadPromise
 
-	-- This chain does two things:
-	-- 1. finally: If loadPromise is already settled, its finally block might
-	--    run before the assignment above, leaving the promise in the table - so
-	--    we run finally here to ensure it's removed.
-	-- 2. catch: Some users might call load without handling rejections,
-	--    triggering unhandled rejection warnings. Since Lyra logs the root
-	--    error, we immediately mark the rejection as caught to silence the
-	--    warning. This *doesn't* consume the rejection; it still propagates to
-	--    the user.
+	-- Ensure the load promise is removed from the tracking table once settled,
+	-- and suppress unhandled rejection warnings if the caller doesn't attach a .catch.
 	loadPromise
 		:finally(function()
+			-- Remove the promise regardless of outcome.
 			self._loadPromises[key] = nil
 		end)
-		:catch(function() end)
+		:catch(function()
+			-- Mark original rejection as handled to prevent "Unhandled Promise
+			-- Rejection" spam if user doesn't catch. Note that this is a new
+			-- promise chain - the original rejection is still propagated to the
+			-- caller.
+		end)
 
+	-- Final check for cancellation after the main load logic.
 	return loadPromise:finally(function(status)
 		if status == (Promise :: any).Status.Cancelled then
 			logger:log("trace", "load was cancelled")
@@ -392,26 +448,29 @@ function Store:load(key: string, userIds: { number }?): Promise.Promise
 end
 
 --[=[
-	Syntactic sugar for `store:load(key):expect()`.
+	Synchronous wrapper for [Store:load]. Waits for the Promise to settle.
+	Throws an error if the load fails or is cancelled.
 	
-	See [Store:load]
+	@within Store
+	@param key string -- The unique identifier for the data to load.
+	@param userIds {number}? -- Optional list of UserIDs for DataStore key tagging.
+	@error any -- Throws any error encountered during the load process.
+	@yields
 ]=]
 function Store:loadAsync(key: string, userIds: { number }?): ()
 	self:load(key, userIds):expect()
 end
 
 --[=[
-	Unloads data for the given key from memory and ends the session.
+	Unloads data for the given key from memory, saves any pending changes,
+	releases the distributed lock, and ends the session.
 
-	```lua
-	store:unload("player_1"):andThen(function()
-		print("Data unloaded!")
-	end)
-	```
-
-	@error "Store is closed" -- The store has been closed
-	@return Promise -- Resolves when data is unloaded
+	Propagates errors from `Session:unload` (e.g., save failures).
+	
 	@within Store
+	@param key string -- The unique identifier for the data to unload.
+	@return Promise -- Resolves when the data is successfully unloaded, or rejects on error.
+	@error "Store is closed" -- If the store instance has been closed.
 ]=]
 function Store:unload(key: string): Promise.Promise
 	assert(t.string(key))
@@ -419,30 +478,38 @@ function Store:unload(key: string): Promise.Promise
 	local logger = self._ctx.logger:extend({ method = "unload", key = key })
 	logger:log("trace", "attempting to unload key")
 
+	-- Prevent operations if the store is closed.
 	if self._closed then
 		logger:log("warn", "attempted to unload key while store is closed")
 		return Promise.reject("Store is closed")
 	end
 
+	-- If a load is in progress, cancel it instead of unloading.
 	if self._loadPromises[key] then
-		logger:log("trace", "key is being loaded, cancelling load")
+		logger:log("trace", "key is being loaded, cancelling load instead of unloading")
 		self._loadPromises[key]:cancel()
+		-- Resolve immediately as the load cancellation handles cleanup.
 		return Promise.resolve()
 	end
 
+	-- If an unload is already in progress, return the existing promise.
 	if self._unloadPromises[key] then
-		logger:log("trace", "key is being unloaded")
+		logger:log("trace", "key is already being unloaded")
 		return self._unloadPromises[key]
 	end
 
-	if not self._sessions[key] then
-		logger:log("warn", "key not loaded")
+	-- If there's no active session, there's nothing to unload.
+	local session = self._sessions[key]
+	if not session then
+		logger:log("warn", "key not loaded, nothing to unload")
 		return Promise.resolve()
 	end
 
 	logger:log("trace", "unloading key")
-	self._unloadPromises[key] = self._sessions[key]:unload():finally(function()
-		logger:log("trace", "key unloaded")
+	-- Store the unload promise to handle concurrent calls.
+	self._unloadPromises[key] = session:unload():finally(function()
+		-- Clean up regardless of unload success or failure.
+		logger:log("trace", "key unload finished, cleaning up state")
 		self._sessions[key] = nil
 		self._unloadPromises[key] = nil
 	end)
@@ -451,86 +518,98 @@ function Store:unload(key: string): Promise.Promise
 end
 
 --[=[
-	Syntactic sugar for `store:unload(key):expect()`.
+	Synchronous wrapper for [Store:unload]. Waits for the Promise to settle.
+	Throws an error if the unload fails.
 	
-	See [Store:unload]
+	@within Store
+	@param key string -- The unique identifier for the data to unload.
+	@error any -- Throws any error encountered during the unload process.
+	@yields
 ]=]
 function Store:unloadAsync(key: string): ()
 	self:unload(key):expect()
 end
 
 --[=[
-	Internal helper to manage sessions.
+	Internal helper function to safely access the session for a given key.
+	Handles waiting for load/unload operations and checks store/session state.
 
 	@within Store
-	@return Promise -- Resolves with the result of the callback
 	@private
+	@param key string -- The key whose session is needed.
+	@param callback (session: Session.Session<any>) -> any -- The function to execute with the session object.
+	@return Promise -- Resolves with the return value of the callback, or rejects if the session cannot be accessed (e.g., not loaded, store closed, load cancelled).
 ]=]
 function Store:_withSession(key: string, callback: (session: Session.Session<any>) -> any): Promise.Promise
 	local logger = self._ctx.logger:extend({ method = "_withSession", key = key })
 
 	return Promise.new(function(resolve, reject)
+		-- Check if store is closed first.
 		if self._closed then
 			logger:log("warn", "attempted to use key while store is closed")
 			return reject("Store is closed")
 		end
 
+		-- If a load is in progress, wait for it.
 		local loadPromise = self._loadPromises[key]
 		if loadPromise then
-			logger:log("trace", "key being loaded, waiting")
-			local loaded = loadPromise:await()
-			if not loaded then
-				return loadPromise:finally(function(status)
-					if status == (Promise :: any).Status.Cancelled then
-						logger:log("trace", "load cancelled")
-						return reject("Load was cancelled")
-					end
-				end)
+			logger:log("trace", "key being loaded, waiting for load promise")
+			local resolved, err = loadPromise:await()
+			if not resolved then
+				if loadPromise:getStatus() == Promise.Status.Cancelled then
+					logger:log("trace", "load was cancelled while waiting")
+					return reject("Load was cancelled")
+				else
+					logger:log("warn", "load failed while waiting")
+					return reject(err)
+				end
 			end
+			-- Load completed successfully while waiting.
 		end
 
+		-- Check if an unload is in progress.
 		if self._unloadPromises[key] then
 			logger:log("warn", "key is being unloaded")
 		end
 
+		-- Get the session; it should exist now if load succeeded or was already loaded.
 		local session = self._sessions[key]
 		if not session then
 			logger:log("warn", "key not loaded")
 			return reject("Key not loaded")
 		end
 
-		resolve(callback(session))
+		-- Session exists and is ready, execute the callback.
+		-- Use Promise.try to handle potential errors within the callback itself.
+		resolve(Promise.try(callback, session))
 	end)
 end
 
 --[=[
-	Returns the DataStoreKeyInfo associated with the given key, if available.
+	Internal helper to get the DataStoreKeyInfo for a loaded key's session.
 
 	@within Store
-	@return Promise<DataStoreKeyInfo?> -- Resolves with the key info, or nil if not available
 	@private
+	@param key string -- The key whose info is needed.
+	@return Promise<DataStoreKeyInfo?> -- Resolves with the key info object, or nil if the session doesn't have key info (shouldn't normally happen for loaded sessions). Rejects if the session cannot be accessed.
 ]=]
 function Store:_getKeyInfo(key: string): Promise.TPromise<DataStoreKeyInfo?>
 	return self:_withSession(key, function(session)
+		-- Access the keyInfo property stored on the session object after load.
 		return session.keyInfo
 	end)
 end
 
 --[=[
-	Gets the current data for the given key.
+	Gets the current, in-memory data state for the given key.
+	Requires the key to be loaded first via `load()`.
+	If the key is still loading, this will wait for it to finish.
 
-	```lua
-	store:get("player_1"):andThen(function(data)
-		print("Current coins:", data.coins)
-	end):catch(function(err)
-		warn("Failed to get data:", err)
-	end)
-	```
-
-	@error "Key not loaded" -- The key hasn't been loaded with store:load()
-	@error "Store is closed" -- The store has been closed
-	@return Promise<T> -- Resolves with the current data
 	@within Store
+	@param key string -- The key whose data to retrieve.
+	@return Promise<T> -- Resolves with the current data object (potentially a deep copy).
+	@error "Key not loaded" -- If `load()` has not been successfully called for this key.
+	@error "Store is closed" -- If the store has been closed.
 ]=]
 function Store:get<T>(key: string): Promise.TPromise<T>
 	assert(t.string(key))
@@ -541,90 +620,156 @@ function Store:get<T>(key: string): Promise.TPromise<T>
 end
 
 --[=[
-	Syntactic sugar for `store:get(key):expect()`.
-
-	See [Store:get]
+	Synchronous wrapper for [Store:get]. Waits for the Promise to settle.
+	Throws an error if getting the data fails.
+	
+	@within Store
+	@param key string -- The key whose data to retrieve.
+	@return T -- The current data object.
+	@error "Key not loaded" -- If `load()` has not been successfully called for this key.
+	@error "Store is closed" -- If the store has been closed.
+	@yields
 ]=]
 function Store:getAsync<T>(key: string): T
 	return self:get(key):expect()
 end
 
 --[=[
-	Updates data for the given key using a transform function.
-	The transform function receives the current data and can modify it.
-	Must return true to commit changes, or false to abort.
+	Applies changes to the data for a given key using a transform function.
 
-	```lua
-	store:update("player_1", function(data)
-		if data.coins < 100 then
-			data.coins += 50
-			return true -- Commit changes
-		end
-		return false -- Don't commit changes
-	end):andThen(function()
-		print("Update successful!")
-	end):catch(function(err)
-		warn("Update failed:", err)
-	end)
-	```
+	The `transformFunction` receives the current data and can modify it directly.
+	It **must** return `true` to indicate that changes were made and should be
+	saved, or `false` to abort the update without saving.
 
-	@error "Key not loaded" -- The key hasn't been loaded with store:load()
-	@error "Store is closed" -- The store has been closed
-	@error "Schema validation failed" -- The transformed data failed schema validation
-	@return Promise<boolean> -- Resolves when the update is complete, with a boolean indicating success
+	Changes are applied optimistically to the in-memory state first and then queued
+	for saving to the DataStore.
+
 	@within Store
+	@param key string -- The key whose data to update.
+	@param transformFunction (data: T) -> boolean -- A function that receives the current data and returns `true` to commit changes or `false` to abort.
+	@return Promise<boolean> -- Resolves with `true` if the transform function returned `true` and the update was successfully queued, or `false` if the transform function returned `false`. Rejects on errors like key not loaded, store closed, or schema validation failure after transformation.
+	@error "Key not loaded" -- If `load()` has not been successfully called for this key.
+	@error "Store is closed" -- If the store instance has been closed.
+	@error "Schema validation failed" -- If the data returned by `transformFunction` does not pass the store's schema check.
 ]=]
 function Store:update<T>(key: string, transformFunction: (data: T) -> boolean): Promise.TPromise<boolean>
 	assert(t.string(key))
 	assert(t.callback(transformFunction))
 
+	-- Use _withSession to safely access the session and call its update method.
 	return self:_withSession(key, function(session)
 		return session:update(transformFunction)
 	end)
 end
 
 --[=[
-	Syntactic sugar for `store:update(key, transformFunction):expect()`.
-
-	See [Store:update]
+	Synchronous wrapper for [Store:update]. Waits for the Promise to settle.
+	Throws an error if the update fails.
+	
+	@within Store
+	@param key string -- The key whose data to update.
+	@param transformFunction (data: T) -> boolean -- The transformation function.
+	@return boolean -- Returns the boolean value returned by the `transformFunction`.
+	@error "Key not loaded" -- If `load()` has not been successfully called for this key.
+	@error "Store is closed" -- If the store instance has been closed.
+	@error "Schema validation failed" -- If the data returned by `transformFunction` does not pass the store's schema check.
+	@yields
 ]=]
 function Store:updateAsync<T>(key: string, transformFunction: (data: T) -> boolean): boolean
 	return self:update(key, transformFunction):expect()
 end
 
 --[=[
-	Performs a transaction across multiple keys atomically.
-	All keys must be loaded first. Either all changes are applied, or none are.
+	Applies changes to the data for a given key using a transform function,
+	with immutable copy-on-write semantics.
 
-	```lua
-	store:tx({"player_1", "player_2"}, function(state)
-		-- Transfer coins between players
-		if state.player_1.coins >= 100 then
-			state.player_1.coins -= 100
-			state.player_2.coins += 100
-			return true -- Commit transaction
-		end
-		return false -- Abort transaction
-	end):andThen(function()
-		print("Transaction successful!")
-	end):catch(function(err)
-		warn("Transaction failed:", err)
-	end)
-	```
+	The `transformFunction` receives the current data but frozen (immutable),
+	and cannot modify it directly. Instead, it should return new data that
+	reflects the desired changes. Otherwise it should return `false` to abort
+	the update without saving.
 
-	@error "Key not loaded" -- One or more keys haven't been loaded
-	@error "Store is closed" -- The store has been closed
-	@error "Schema validation failed" -- The transformed data failed schema validation
-	@error "Keys changed in transaction" -- The transform function modified the keys table
-	@return Promise -- Resolves when the transaction is complete
+	Changes are applied optimistically to the in-memory state first and then queued
+	for saving to the DataStore.
+
 	@within Store
+	@param key string -- The key whose data to update.
+	@param transformFunction (data: T) -> T | false -- A function that receives the current data and returns a new copy of the data with changes to commit changes, or `false` to abort.
+	@return Promise<boolean> -- Resolves with `true` if the transform function committed and the update was successfully queued, or `false` if the transform function returned `false`. Rejects on errors like key not loaded, store closed, or schema validation failure after transformation.
+	@error "Key not loaded" -- If `load()` has not been successfully called for this key.
+	@error "Store is closed" -- If the store instance has been closed.
+	@error "Schema validation failed" -- If the data returned by `transformFunction` does not pass the store's schema check.
 ]=]
-function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T }) -> boolean): Promise.Promise
-	assert(t.array(t.string)(keys))
+function Store:updateImmutable<T>(key: string, transformFunction: (data: T) -> T | false): Promise.TPromise<boolean>
+	assert(t.string(key))
 	assert(t.callback(transformFunction))
 
+	-- Use _withSession to safely access the session and call its updateImmutable method.
+	return self:_withSession(key, function(session)
+		return session:updateImmutable(transformFunction)
+	end)
+end
+
+--[=[
+	Synchronous wrapper for [Store:updateImmutable]. Waits for the Promise to settle.
+	Throws an error if the update fails.
+	
+	@within Store
+	@param key string -- The key whose data to update.
+	@param transformFunction (data: T) -> T | false -- The transformation function.
+	@return boolean -- Returns `true` if the update was successful, or `false` if the transform function returned `false`.
+	@error "Key not loaded" -- If `load()` has not been successfully called for this key.
+	@error "Store is closed" -- If the store instance has been closed.
+	@error "Schema validation failed" -- If the data returned by `transformFunction` does not pass the store's schema check.
+	@yields
+]=]
+function Store:updateImmutableAsync<T>(key: string, transformFunction: (data: T) -> T | false): boolean
+	return self:updateImmutable(key, transformFunction):expect()
+end
+
+--[=[
+	Internal helper to perform transaction logic on multiple keys.
+	Handles acquiring locks, validating state, and committing changes atomically
+	via a two-phase commit process.
+	
+	Supports both immutable and mutable transactions, where `immutable` controls
+	whether the data passed to the `transformFunction` is a deep copy (mutable)
+	or a reference to the canonical, frozen data (immutable).
+
+	**Implementation Details:**
+	- Uses `PromiseQueue.multiQueueAdd` to ensure the transform function only runs
+	  when all involved session queues are ready.
+	- Uses a temporary `txLockPromise` on sessions to block concurrent `update` calls
+	  while the transaction logic is executing.
+	- Performs a two-phase commit using a transaction marker in the `txStore`:
+		1. Write `false` to `txStore` under a unique `txId`.
+		2. Update all primary `recordStore` entries with the new data and `txId`.
+		3. If successful, remove the `txId` entry from `txStore`.
+	- If any step fails, attempts to revert changes by rewriting records without the `txId`
+	  and removing the `txId` marker.
+	- Uses `JsonPatch` to calculate differences for efficient storage in `TxInfo`.
+
+	Propagates DataStore errors encountered during the commit or revert phases.
+	
+	@within Store
+	@param keys {string} -- An array of keys involved in the transaction.
+	@param transformFunction ((state: { [string]: any }) -> boolean) | ((state: { [string]: any }) -> { [string]: any } | false) -- A function that receives the current state of all keys and, depending on `immutable`, either modifies it directly (mutable) and returns `true` to commit, or returns a new state (immutable) to commit. Must return `false` to abort the transaction.
+	@return Promise -- Resolves with `true` if the transaction was successful, or `false` if it was aborted. Rejects on error.
+	@error "Key not loaded" -- If any key in the `keys` array has not been loaded.
+	@error "Key is already locked by another transaction" -- If any key is already involved in an ongoing `tx`.
+	@error "Key is closed" -- If any involved session has been closed (e.g., due to lock loss).
+	@error "Store is closed" -- If the store instance has been closed.
+	@error "Schema validation failed" -- If the data for any key after transformation fails the schema check.
+	@error "Keys changed in transaction" -- If the `transformFunction` attempts to add or remove keys from the state table it receives.
+]=]
+local function txInternal<T>(
+	self: Store<T>,
+	keys: { string },
+	transformFunction: ((state: T) -> boolean) | ((state: T) -> T | false),
+	immutable: boolean
+): Promise.TPromise<boolean>
+	-- Generate a unique ID for this transaction attempt.
 	local txId = HttpService:GenerateGUID(false)
-	local logger = self._ctx.logger:extend({ method = "tx", keys = keys, txId = txId })
+	local logger = self._ctx.logger:extend({ method = "tx", keys = keys, txId = txId, immutable = immutable })
 
 	logger:log("trace", "starting transaction")
 	if self._closed then
@@ -632,90 +777,127 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 		return Promise.reject("Store is closed")
 	end
 
+	-- Pre-checks: Ensure all keys are loaded and not already involved in a transaction or closed.
 	for _, key in keys do
 		local session = self._sessions[key]
 		if not session then
+			logger:log("error", `key not loaded: {key}`)
 			return Promise.reject(`Key not loaded: {key}`)
 		end
+		-- Check if the session is already locked by another transaction.
 		if session.txLockPromise then
+			logger:log("error", `key is already locked by another transaction: {key}`)
 			return Promise.reject(`Key is already locked by another transaction: {key}`)
 		end
+		-- Check if the session was closed (e.g., due to lock loss).
 		if session.closed then
+			logger:log("error", `key is closed: {key}`)
 			return Promise.reject(`Key is closed: {key}`)
 		end
 	end
 
+	-- Create a promise that acts as a lock signal for the involved sessions.
+	-- It resolves only when the transaction completes (success or failure).
 	local txLockResolve
 	local txLockPromise = Promise.new(function(resolve)
 		txLockResolve = resolve
 	end)
 
+	-- Get the PromiseQueues for all involved sessions.
 	local queues = Tables.map(keys, function(key)
 		return self._sessions[key].queue
 	end)
 
-	-- Block Session:update calls during transaction execution by setting a lock
-	-- promise on affected sessions. Promise resolves when transaction
-	-- completes.
+	-- Helper function to manage setting and clearing the txLockPromise on sessions.
 	local function withTxLock(fn: () -> Promise.Promise): Promise.Promise
+		-- Set the lock promise on all involved sessions *before* executing the function.
+		-- This prevents concurrent :update calls from modifying state while tx runs.
 		for _, key in keys do
 			local session = self._sessions[key]
 			session.txLockPromise = txLockPromise
 		end
 		logger:log("trace", "set txLockPromise on Sessions")
 
+		-- Execute the provided function and ensure the lock is cleared afterwards.
 		return Promise.try(fn):finally(function()
+			-- Clear the lock promise from all involved sessions.
 			for _, key in keys do
 				local session = self._sessions[key]
-				if session.txLockPromise == txLockPromise then
-					session.txLockPromise = nil :: any
+				-- Only clear if it's still *our* lock promise (sanity check).
+				if session and session.txLockPromise == txLockPromise then
+					session.txLockPromise = nil
 				end
 			end
 			logger:log("trace", "cleared txLockPromise on Sessions")
+			-- Resolve the lock promise to signal completion to any waiting operations.
 			txLockResolve()
 		end)
 	end
 
 	logger:log("trace", `acquiring PromiseQueue lock on keys`)
+	-- Use multiQueueAdd to ensure the core transaction logic runs only when
+	-- all session queues are ready (atomicity across queues).
 	return PromiseQueue.multiQueueAdd(queues, function()
 		logger:log("trace", `acquired PromiseQueue lock on keys`)
 
+		-- Wrap the core transaction logic with the session tx lock mechanism.
 		return withTxLock(function()
-			local currentState = {}
+			-- 1. Get current state from all sessions.
+			local currentState: { [string]: T } = {}
 			for _, key in keys do
 				local session = self._sessions[key]
-				currentState[key] = session.data
+				-- Use session.data directly as we hold the queue lock.
+				currentState[key] = session.data :: T
 			end
 
-			local nextState = Tables.copyDeep(currentState)
+			local nextState
+			if immutable then
+				-- If immutable, the transformFunction has to handle
+				-- copy-on-write semantics itself, and we'll pass the current
+				-- state directly. The sessions' data are already frozen, but we
+				-- still need to freeze the table containing them.
+				table.freeze(currentState)
+				nextState = currentState
+			else
+				-- If mutable, we allow the transform function to modify a copy.
+				nextState = Tables.copyDeep(currentState)
+			end
+
+			-- 2. Execute the user's transform function.
+			-- Use noYield to prevent yielding within the transform function.
 			local transformOk, result = pcall(noYield, transformFunction, nextState :: any)
 			if not transformOk then
 				logger:log("error", "tx transformFunction failed", { error = result })
 				return Promise.reject(`Store:tx transformFunction failed: {result}`)
 			end
 
-			assert(typeof(result) == "boolean", "Transaction transform function must return a boolean")
+			if immutable == false then
+				-- If mutable, the transform function should return a boolean.
+				-- This indicates whether the changes should be committed.
+				assert(typeof(result) == "boolean", "Mutable transaction transform function must return a boolean")
+			else
+				-- If immutable, the transform function should return a new state or false.
+				-- This indicates the new state to commit or that the transaction should be aborted.
+				assert(
+					typeof(result) == "table" or result == false,
+					"Immutable transaction transform function must return a table or false"
+				)
+			end
 
+			-- If transform returned false, abort the transaction.
 			if result == false then
-				logger:log("trace", "tx transformFunction returned false, skipping update")
-				return Promise.reject("Transaction transform function returned false")
+				logger:log("trace", "tx transformFunction returned false, aborting")
+				return Promise.resolve(false)
 			end
 
-			if self._ctx.disableReferenceProtection == false then
-				-- We deep copy here to prevent references to internal state from
-				-- being leaked. If we didn't, the transform function could modify
-				-- the state after it runs, which shouldn't be allowed.
-				nextState = Tables.copyDeep(nextState)
+			if immutable then
+				nextState = result
 			end
 
-			for _, key in keys do
-				local schemaOk, err = self._ctx.schema(nextState[key] :: any)
-				if not schemaOk then
-					logger:log("error", `schema validation for key {key} failed: {err}`)
-					return Promise.reject(`Store:tx schema validation failed: {err}`)
-				end
-			end
+			-- We freeze the nextState to prevent further modifications.
+			Tables.freezeDeep(nextState)
 
+			-- 3. Check if the transform function illegally modified the set of keys.
 			local didKeysChange = false
 			for key in currentState do
 				if nextState[key] == nil then
@@ -723,10 +905,12 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 					break
 				end
 			end
-			for key in nextState do
-				if currentState[key] == nil then
-					didKeysChange = true
-					break
+			if not didKeysChange then
+				for key in nextState do
+					if currentState[key] == nil then
+						didKeysChange = true
+						break
+					end
 				end
 			end
 			if didKeysChange then
@@ -734,8 +918,16 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 				return Promise.reject("Keys changed in transaction")
 			end
 
-			-- If no keys changed we can exit early, and if only one key
-			-- changed, we can treat it as a normal :update.
+			-- 4. Validate the resulting state against schemas.
+			for _, key in keys do
+				local schemaOk, err = self._ctx.schema(nextState[key] :: any)
+				if not schemaOk then
+					logger:log("error", `schema validation for key {key} failed: {err}`)
+					return Promise.reject(`Store:tx schema validation failed for key '{key}': {err}`)
+				end
+			end
+
+			-- 5. Determine which keys actually changed.
 			local changedKeys = {}
 			for key in currentState do
 				if not Tables.equalsDeep(currentState[key] :: any, nextState[key] :: any) then
@@ -743,53 +935,74 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 				end
 			end
 
+			-- Handle cases where no keys or only one key changed.
 			if #changedKeys == 0 then
 				logger:log("trace", "tx had no mutations, skipping update")
-				return Promise.resolve()
+				return Promise.resolve(true) -- No changes, resolve successfully.
 			elseif #changedKeys == 1 then
-				logger:log("trace", `tx only changed one key, treating as Session:update`)
+				-- If only one key changed, treat it as a standard single-key update for efficiency.
+				logger:log("trace", `tx only changed one key ('{changedKeys[1]}'), treating as Session:update`)
+
 				local key = changedKeys[1]
-				self._sessions[key]:mutateKey(nextState[key])
-				return Promise.resolve()
+				local nextData = nextState[key]
+
+				if immutable == false then
+					-- If mutable, reconcile the data before mutating.
+					local currentData = currentState[key]
+					nextData = Tables.reconcileDeep(currentData, nextData)
+				end
+
+				-- Directly mutate the session state and let its normal save mechanism handle it.
+				self._sessions[key]:mutateKey(nextData)
+
+				return Promise.resolve(true)
 			end
 
+			-- 6. Multi-key change: Proceed with the two-phase commit.
 			logger:log("trace", "tx changed multiple keys, beginning multi-key update")
 			local patches = {}
-
 			for key, newData in nextState do
+				-- Generate JSON patches representing the changes for each key.
 				patches[key] = JsonPatch.createPatch(currentState[key], newData)
 			end
 
-			-- Represent 'failed' as `false` and 'committed' as `nil`. When
-			-- committing, we can simply remove the status entry rather than
-			-- updating all keys, saving writes for successful transactions.
+			-- Phase 1a: Prepare - Write the transaction status marker (`false` = pending).
 			local prepareTxPromise = dataStoreRetry(function()
 				return self._ctx.txStore:SetAsync(txId, false)
 			end):catch(function(err)
 				logger:log("error", "failed to prepare txId", { error = err })
-				return Promise.reject("Failed to prepare tx")
+				return Promise.reject("Failed to prepare tx") -- Abort if status marker fails.
 			end)
 
+			-- Phase 1b: Write Records - After preparing, write the new records with TxInfo.
 			local keyWritePromises = prepareTxPromise:andThen(function()
+				logger:log("trace", "tx status prepared, writing records with TxInfo")
+				-- Create promises for writing each key's record.
 				return Promise.all(Tables.map(keys, function(key)
-					local txInfo = {
+					local txInfo: Types.TxInfo = {
 						txId = txId,
 						txPatch = patches[key],
-						committedData = currentState[key],
+						committedData = currentState[key], -- Store pre-tx data for potential reads.
 					}
-
 					return self._sessions[key]:writeRecord(txInfo)
 				end))
 			end)
 
+			-- Function to handle reverting the transaction if commit fails.
 			local function revert(err)
 				logger:log("error", "multi-key update or tx commit failed, reverting", { error = err })
 
+				-- Attempt to rewrite all records *without* the TxInfo.
 				local cleanupPromises = Tables.map(keys, function(key)
-					local txInfo = { committedData = currentState[key] }
+					local txInfo = { committedData = currentState[key] } -- Revert to pre-tx state reference.
 					return self._sessions[key]:writeRecord(txInfo)
 				end)
 
+				-- After attempting record reverts, try to clean up the tx
+				-- status marker. It's important we use `Promise.all` instead of
+				-- `Promise.allSettled` here, as we want to ensure the tx marker
+				-- is scrubbed from all keys before removing it, since a `nil`
+				-- tx status means the tx was committed successfully.
 				return Promise.all(cleanupPromises)
 					:andThen(function()
 						logger:log("trace", "multi-key update reverted, cleaning up tx status")
@@ -797,60 +1010,170 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 							return self._ctx.txStore:RemoveAsync(txId)
 						end)
 					end)
-					:andThen(function()
-						logger:log("trace", "tx status cleaned up")
+					:finally(function()
+						logger:log("trace", "tx status cleanup attempted after failure")
+						-- Reject with the original error that triggered the revert.
 						return Promise.reject(err)
 					end)
 			end
 
-			local updateAndCommitPromise = keyWritePromises
+			-- Phase 2: Commit - If all records wrote successfully, remove the tx status marker.
+			local commitPromise = keyWritePromises
 				:andThen(function()
-					logger:log("trace", "multi-key update successful, committing transaction")
+					logger:log(
+						"trace",
+						"multi-key records written successfully, committing transaction by removing tx status"
+					)
 					return dataStoreRetry(function()
 						return self._ctx.txStore:RemoveAsync(txId)
 					end)
 				end)
-				:catch(revert)
+				:catch(revert) -- If commit fails, trigger the revert process.
+
+			-- Post-Commit/Revert Logic
+			return commitPromise
 				:andThen(function()
+					-- Runs only if commit succeeded (revert path rejects).
 					logger:log("debug", "transaction committed successfully")
 
-					-- We just technically performed a save, so let's reflect
-					-- that in the Sessions.
+					-- Update the in-memory session state to reflect the committed changes.
 					for _, key in keys do
 						local session = self._sessions[key]
-						session:setData(nextState[key])
-						session.changeSet = {}
+						if session then -- Check if session still exists (e.g., wasn't closed due to lock loss during tx)
+							local nextData = nextState[key]
+
+							if immutable == false then
+								-- If mutable, reconcile the data before mutating.
+								local currentData = currentState[key]
+								nextData = Tables.reconcileDeep(currentData, nextData)
+							end
+
+							session:mutateKey(nextData)
+							session.changeSet = {} -- Reset changeset as data is now saved.
+						end
 					end
+
+					return true
 				end)
 				:finally(function()
+					-- Runs after commit or revert finishes.
 					logger:log("trace", "tx finished")
 				end)
-
-			return updateAndCommitPromise
-		end)
-	end)
+		end) -- End of withTxLock
+	end) -- End of multiQueueAdd
 end
 
 --[=[
-	Syntactic sugar for `store:tx(keys, transformFunction):expect()`.
+	Performs an atomic transaction across multiple keys.
+	
+	Requires the keys to be loaded first via `load()`. The `transformFunction`
+	is called with the current state of all involved keys and must return `true`
+	to commit changes or `false` to abort.
 
-	See [Store:tx]
+	Propagates errors from the transaction process, including DataStore errors,
+	schema validation failures, and key loading issues.
+	
+	@within Store
+	@param keys {string} -- An array of keys involved in the transaction.
+	@param transformFunction (state: { [string]: T }) -> boolean -- The transformation function.
+	@return Promise<boolean> -- Resolves with `true` if the transaction was successful, or `false` if it was aborted. Rejects on error.
+	@error "Key not loaded" -- If any key in the `keys` array has not been loaded.
+	@error "Key is already locked by another transaction" -- If any key is already involved in an ongoing `tx`.
+	@error "Key is closed" -- If any involved session has been closed (e.g., due to lock loss).
+	@error "Store is closed" -- If the store instance has been closed.
+	@error "Schema validation failed" -- If the data for any key after transformation fails the schema check.
+	@error "Keys changed in transaction" -- If the `transformFunction` attempts to add or remove keys from the state table it receives.
+]=]
+function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T }) -> boolean): Promise.TPromise<boolean>
+	assert(t.array(t.string)(keys))
+	assert(t.callback(transformFunction))
+
+	return txInternal(self, keys, transformFunction, false)
+end
+
+--[=[
+	Synchronous wrapper for [Store:tx]. Waits for the Promise to settle.
+	Throws an error if the transaction fails or is aborted.
+	
+	@within Store
+	@param keys {string} -- An array of keys involved in the transaction.
+	@param transformFunction (state: { [string]: T }) -> boolean -- The transformation function.
+	@error any -- Throws any error encountered during the transaction.
+	@yields
 ]=]
 function Store:txAsync<T>(keys: { string }, transformFunction: (state: { [string]: T }) -> boolean): ()
 	self:tx(keys, transformFunction):expect()
 end
 
 --[=[
-	Forces an immediate save of the given key's data.
+	Performs an atomic transaction across multiple keys with immutable, copy-on-write semantics.
+
+	The data passed to the function is frozen and cannot be modified directly.
+	Instead, the function should return a new table with the desired changes.
+
+	Requires the keys to be loaded first via `load()`. The `transformFunction`
+	is called with the current state of all involved keys and must return the
+	new state to commit or `false` to abort.
+
+	Propagates errors from the transaction process, including DataStore errors,
+	schema validation failures, and key loading issues.
+
+	@within Store
+	@param keys {string} -- An array of keys involved in the transaction.
+	@param transformFunction (state: { [string]: T }) -> { [string]: T } | false -- The transformation function.
+	@return Promise<boolean> -- Resolves with `true` if the transaction was successful, or `false` if it was aborted. Rejects on error.
+	@error "Key not loaded" -- If any key in the `keys` array has not been loaded.
+	@error "Key is already locked by another transaction" -- If any key is already involved in an ongoing `tx`.
+	@error "Key is closed" -- If any involved session has been closed (e.g., due to lock loss).
+	@error "Store is closed" -- If the store instance has been closed.
+	@error "Schema validation failed" -- If the data for any key after transformation fails the schema check.
+	@error "Keys changed in transaction" -- If the `transformFunction` attempts to add or remove keys from the state table it receives.
+]=]
+function Store:txImmutable<T>(
+	keys: { string },
+	transformFunction: (state: { [string]: T }) -> { [string]: T } | false
+): Promise.TPromise<boolean>
+	assert(t.array(t.string)(keys))
+	assert(t.callback(transformFunction))
+
+	return txInternal(self, keys, transformFunction, true)
+end
+
+--[=[
+	Synchronous wrapper for [Store:txImmutable]. Waits for the Promise to settle.
+	Throws an error if the transaction fails or is aborted.
 	
-	:::info
-	Data is automatically saved periodically, so manual saves are usually only useful in scenarios where you need to guarantee data has saved, such as ProcessReceipt.
+	@within Store
+	@param keys {string} -- An array of keys involved in the transaction.
+	@param transformFunction (state: { [string]: T }) -> { [string]: T } | false -- The transformation function.
+	@error any -- Throws any error encountered during the transaction.
+	@yields
+]=]
+function Store:txImmutableAsync<T>(
+	keys: { string },
+	transformFunction: (state: { [string]: T }) -> { [string]: T } | false
+): boolean
+	return self:txImmutable(keys, transformFunction):expect()
+end
+
+--[=[
+	Forces an immediate save of the given key's current in-memory data state
+	to the DataStore.
+
+	:::note
+	Data is automatically saved periodically by the Session's autosave mechanism.
+	Manual saves are typically only needed in specific scenarios like processing
+	developer product purchases (`MarketplaceService.ProcessReceipt`) where immediate
+	persistence is crucial before granting benefits.
 	:::
 
-	@error "Key not loaded" -- The key hasn't been loaded with store:load()
-	@error "Store is closed" -- The store has been closed
-	@return Promise -- Resolves when the save is complete
+	Propagates errors from `Session:save` (e.g., DataStore write errors).
+	
 	@within Store
+	@param key string -- The key whose data to save.
+	@return Promise -- Resolves when the save operation completes successfully, rejects on error.
+	@error "Key not loaded" -- If `load()` has not been successfully called for this key.
+	@error "Store is closed" -- If the store instance has been closed.
 ]=]
 function Store:save(key: string): Promise.Promise
 	assert(t.string(key))
@@ -861,52 +1184,66 @@ function Store:save(key: string): Promise.Promise
 end
 
 --[=[
-	Syntactic sugar for `store:save(key):expect()`.
-
-	See [Store:save]
+	Synchronous wrapper for [Store:save]. Waits for the Promise to settle.
+	Throws an error if the save fails.
+	
+	@within Store
+	@param key string -- The key whose data to save.
+	@error any -- Throws any error encountered during the save operation.
+	@yields
 ]=]
 function Store:saveAsync(key: string): ()
 	self:save(key):expect()
 end
 
 --[=[
-	Closes the store and unloads all active sessions.
-	The store cannot be used after closing
+	Closes the store, gracefully unloading all active sessions.
 
-	@return Promise -- Resolves when the store is closed
+	Attempts to save any pending changes for all loaded keys before releasing locks
+	and removing sessions from memory. The store instance becomes unusable as soon as this is called.
+
 	@within Store
+	@return Promise -- Resolves when all sessions have attempted to unload, or rejects if any session encountered an error during its unload process (errors are aggregated).
 ]=]
 function Store:close(): Promise.Promise
 	local logger = self._ctx.logger:extend({ method = "close" })
 	logger:log("trace", "closing store")
 
-	for _, loadPromise in self._loadPromises do
+	-- Cancel any loads that are still in progress.
+	for key, loadPromise in self._loadPromises do
+		logger:log("trace", "cancelling in-progress load", { key = key });
 		(loadPromise :: any):cancel()
 	end
 
+	-- Collect errors encountered during individual session unloads.
 	local rejections = {}
 
-	local promises = {}
-	for key in self._sessions do
+	-- Initiate unload for all currently active sessions.
+	local unloadPromises = {}
+	for key, session in self._sessions do
 		if self._unloadPromises[key] then
 			logger:log("trace", "key already being unloaded", { key = key })
-			table.insert(promises, self._unloadPromises[key])
+			table.insert(unloadPromises, self._unloadPromises[key])
 		else
 			logger:log("trace", "unloading key", { key = key })
 			table.insert(
-				promises,
+				unloadPromises,
 				self:unload(key):catch(function(err)
-					table.insert(rejections, err)
+					logger:log("error", "error unloading key during close", { key = key, error = err })
+					table.insert(rejections, { key = key, error = err })
+					-- Don't re-throw; let Promise.allSettled handle aggregation.
 				end)
 			)
 		end
 	end
 
+	-- Mark the store as closed immediately. Further operations will be rejected.
 	self._closed = true
 	logger:log("trace", "store marked as closed")
 
-	return Promise.allSettled(promises):andThen(function()
+	return Promise.allSettled(unloadPromises):andThen(function()
 		logger:log("debug", "store closed")
+		-- If any individual unload failed, reject the main close promise with the errors.
 		if #rejections > 0 then
 			return Promise.reject(rejections)
 		end
@@ -914,37 +1251,42 @@ function Store:close(): Promise.Promise
 end
 
 --[=[
-	Syntactic sugar for `store:close():expect()`.
-
-	See [Store:close]
+	Synchronous wrapper for [Store:close]. Waits for the Promise to settle.
+	Throws an error if closing fails (i.e., if any session failed to unload).
+	
+	@within Store
+	@error any -- Throws an error (potentially a table of errors) if closing fails.
+	@yields
 ]=]
 function Store:closeAsync(): ()
 	self:close():expect()
 end
 
 --[=[
-	Returns the current data for the given key without loading it into the store.
+	Reads the current data for the given key directly from the DataStore,
+	bypassing the session cache and locking mechanism.
 
-	```lua
-	store:peek("456123"):andThen(function(data)
-		print("Current coins:", data.coins)
-	end):catch(function(err)
-		warn("Failed to peek data:", err)
-	end)
-	```
+	This provides a snapshot of the last saved state but does not load the key
+	into an active session. Useful for inspecting data without acquiring a lock.
+	Handles potential sharding and transaction status automatically.
 
-	@return Promise<T> -- Resolves with the current data
+	Propagates DataStore errors from underlying reads.
+	
 	@within Store
+	@param key string -- The key whose data to peek at.
+	@return Promise<T?> -- Resolves with the data object, or `nil` if the key doesn't exist. Rejects on DataStore errors.
 ]=]
-function Store:peek<T>(key: string): Promise.TPromise<T>
+function Store:peek<T>(key: string): Promise.TPromise<T?>
+	-- 1. Get the main record from the recordStore.
 	return dataStoreRetry(function()
 			return self._ctx.recordStore:GetAsync(key)
 		end)
 		:andThen(function(record: Types.DataStoreRecord?)
+			-- If no record exists, the key is empty.
 			if record == nil then
 				return nil
 			end
-			assert(record, "luau")
+			assert(record, "luau") -- Forcefully narrowing type due to old type solver limitations
 
 			local file = record.file
 			if file then
@@ -952,6 +1294,7 @@ function Store:peek<T>(key: string): Promise.TPromise<T>
 					store = self._ctx.shardStore,
 					file = file,
 				}
+				-- Files.read handles direct data or reconstruction from shards.
 				return Files.read(readParams)
 			end
 
@@ -961,7 +1304,7 @@ function Store:peek<T>(key: string): Promise.TPromise<T>
 			if txInfo == nil then
 				return nil
 			end
-			assert(txInfo, "luau")
+			assert(txInfo, "luau") -- Forcefully narrowing type due to old type solver limitations
 
 			local readTxParams = {
 				store = self._ctx.txStore,
@@ -972,21 +1315,30 @@ function Store:peek<T>(key: string): Promise.TPromise<T>
 end
 
 --[=[
-	Syntactic sugar for `store:peek(key):expect()`.
+	Synchronous wrapper for [Store:peek]. Waits for the Promise to settle.
+	Returns the data for the key if it exists. Throws on any errors from underlying DataStore operations.
 
-	See [Store:peek]
+	@within Store
+	@param key string -- The key whose data to peek at.
+	@return T? -- The data object, or `nil` if the key doesn't exist.
+	@error any -- May throw errors from underlying DataStore operations.
+	@yields
 ]=]
-function Store:peekAsync<T>(key: string): T
+function Store:peekAsync<T>(key: string): T?
 	return self:peek(key):expect()
 end
 
 --[=[
-	Checks if a lock is currently active for the given key.
+	Checks if a distributed lock is currently active for the given key in MemoryStore.
 
-	@return Promise<boolean>
+	Propagates errors from `Locks.probeLockActive`.
+	
 	@within Store
+	@param key string -- The key to check the lock status for.
+	@return Promise<boolean> -- Resolves with `true` if a lock is active, `false` otherwise. Rejects on MemoryStore errors.
 ]=]
 function Store:probeLockActive(key: string): Promise.TPromise<boolean>
+	-- Delegate directly to the Locks module.
 	return Locks.probeLockActive({
 		storeContext = self._ctx,
 		key = key,
@@ -994,21 +1346,30 @@ function Store:probeLockActive(key: string): Promise.TPromise<boolean>
 end
 
 --[=[
-	Syntactic sugar for `store:probeLockActive(key):expect()`.
-
-	See [Store:probeLockActive]
+	Synchronous wrapper for [Store:probeLockActive]. Waits for the Promise to settle.
+	Throws an error if the check fails.
+	
+	@within Store
+	@param key string -- The key to check the lock status for.
+	@return boolean -- `true` if a lock is active, `false` otherwise.
+	@error any -- Throws any error encountered during the probe operation.
+	@yields
 ]=]
 function Store:probeLockActiveAsync(key: string): boolean
 	return self:probeLockActive(key):expect()
 end
 
 --[=[
-	Returns DataStoreVersionPages for the given key.
+	Lists historical versions of the data for a given key using DataStore versioning.
 
-	@return Promise<DataStoreVersionPages>
+	Propagates errors from `DataStore:ListVersionsAsync`.
+	
 	@within Store
+	@param params ListVersionParams -- Parameters specifying the key, sorting, date range, and page size.
+	@return Promise<DataStoreVersionPages> -- Resolves with an iterator object (`DataStoreVersionPages`) that can be used to fetch pages of version history. Rejects on DataStore errors.
 ]=]
 function Store:listVersions(params: ListVersionParams): Promise.TPromise<DataStoreVersionPages>
+	-- Wrap the DataStore call with retry logic.
 	return dataStoreRetry(function()
 		return self._ctx.recordStore:ListVersionsAsync(
 			params.key,
@@ -1021,49 +1382,73 @@ function Store:listVersions(params: ListVersionParams): Promise.TPromise<DataSto
 end
 
 --[=[
-	Syntactic sugar for `store:listVersions(params):expect()`.
-
-	See [Store:listVersions]
+	Synchronous wrapper for [Store:listVersions]. Waits for the Promise to settle.
+	Throws an error if listing versions fails.
+	
+	@within Store
+	@param params ListVersionParams -- Parameters for listing versions.
+	@return DataStoreVersionPages -- An iterator for version history.
+	@error any -- Throws any error encountered during the list operation.
+	@yields
 ]=]
 function Store:listVersionsAsync(params: ListVersionParams): DataStoreVersionPages
 	return self:listVersions(params):expect()
 end
 
 --[=[
-	Reads a specific version of data for the given key.
+	Reads the data content of a specific historical version for a given key.
 
-	@return Promise<T, DataStoreKeyInfo>
+	Propagates DataStore errors from underlying reads.
+	
 	@within Store
+	@param key string -- The key whose version to read.
+	@param version string -- The specific version ID (obtained from `listVersions`).
+	@return Promise<(T, DataStoreKeyInfo)> -- Resolves with the data object (`T`) and the `DataStoreKeyInfo` for that version. Rejects if the version doesn't exist or on DataStore/read errors.
+	@error "Record not found" -- If the specified version doesn't exist.
 ]=]
 function Store:readVersion<T>(key: string, version: string): Promise.TPromise<(T, DataStoreKeyInfo)>
+	-- 1. Get the specific version record from the recordStore.
 	return dataStoreRetry(function()
 			return self._ctx.recordStore:GetVersionAsync(key, version)
 		end)
-		:andThen(function(record: any, keyInfo: any)
+		:andThen(function(record: Types.DataStoreRecord?, keyInfo: DataStoreKeyInfo?)
+			-- Ensure both the record content and key info were returned.
 			if not record or not keyInfo then
-				return Promise.reject("Record not found")
+				return Promise.reject("Record not found for the specified version")
 			end
 
+			-- 2. Read the data file associated with that version record.
 			local readParams: Files.ReadParams = {
 				store = self._ctx.recordStore,
 				file = record.file,
 			}
-			return Files.read(readParams)
+			return Files.read(readParams):andThen(function(txInfo)
+				return txInfo, keyInfo -- Pass both results to the next step.
+			end)
 		end)
-		:andThen(function(txInfo: Types.TxInfo)
+		:andThen(function(txInfo: Types.TxInfo, keyInfo: DataStoreKeyInfo)
 			local readTxParams = {
 				store = self._ctx.txStore,
 				txInfo = txInfo,
 			}
-
-			return Transactions.readTx(readTxParams)
+			-- Return the final data along with the original keyInfo.
+			return Transactions.readTx(readTxParams):andThen(function(finalData)
+				return finalData, keyInfo
+			end)
 		end)
 end
 
 --[=[
-	Syntactic sugar for `store:readVersion(key, version):expect()`.
-
-	See [Store:readVersion]
+	Synchronous wrapper for [Store:readVersion]. Waits for the Promise to settle.
+	Throws an error if reading the version fails.
+	
+	@within Store
+	@param key string -- The key whose version to read.
+	@param version string -- The specific version ID.
+	@return T -- The data object for the specified version.
+	@return DataStoreKeyInfo -- The key info for the specified version.
+	@error any -- Throws any error encountered during the read operation.
+	@yields
 ]=]
 function Store:readVersionAsync<T>(key: string, version: string): (T, DataStoreKeyInfo)
 	return self:readVersion(key, version):expect()

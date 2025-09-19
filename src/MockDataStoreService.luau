@@ -1,4 +1,3 @@
---!strict
 local HttpService = game:GetService("HttpService")
 
 local Tables = require(script.Parent.Tables)
@@ -238,9 +237,14 @@ local function doRateLimitAndQueue(self: any, requestType: string)
 	return true
 end
 
+local function sanitize(value: any)
+	return Tables.copyDeep(value)
+end
+
 local MockDataStore = {}
 
 function MockDataStore:SetAsync(key, value, userIds, options)
+	value = sanitize(value)
 	enforceKeyLimits(key)
 	enforceDataLimits(value)
 	if options then
@@ -276,12 +280,14 @@ function MockDataStore:SetAsync(key, value, userIds, options)
 	return latestVersion
 end
 
-function MockDataStore:GetAsync(key)
+function MockDataStore:GetAsync(key, options)
 	enforceKeyLimits(key)
 
-	local cachedValue, cachedKeyInfo = getCachedValue(self, key)
-	if cachedValue ~= nil then
-		return cachedValue, cachedKeyInfo
+	if options == nil or options.UseCache == true then
+		local cachedValue, cachedKeyInfo = getCachedValue(self, key)
+		if cachedValue ~= nil then
+			return cachedValue, cachedKeyInfo
+		end
 	end
 
 	doRateLimitAndQueue(self, "GetAsync")
@@ -312,6 +318,7 @@ function MockDataStore:UpdateAsync(key, transformFunction)
 		if newValue == nil then
 			return currentValue, keyInfo
 		end
+		newValue = sanitize(newValue)
 
 		enforceDataLimits(newValue)
 		validateMetadata(newMetadata)

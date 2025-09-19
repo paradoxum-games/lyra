@@ -1,11 +1,3 @@
---!strict
-
-local Players = game:GetService("Players")
-
-local Promise = require(script.Parent.Promise)
-local Store = require(script.Parent.Store)
-local Types = require(script.Parent.Types)
-
 --[=[
 	A PlayerStore wraps a regular Store to provide a more convenient API for working with Player data.
 	It automatically converts Players to UserId keys and handles player kicks on data errors.
@@ -19,25 +11,30 @@ local Types = require(script.Parent.Types)
 		},
 		schema = function(data)
 			return typeof(data.coins) == "number" and typeof(data.items) == "table",
-				"Invalid data format"
+			"Invalid data format"
 		end,
 	})
 
 	-- Load data when player joins
 	Players.PlayerAdded:Connect(function(player)
-		playerStore:load(player):andThen(function()
-			print("Data loaded for", player.Name)
-		end)
+		playerStore:loadAsync(player)
 	end)
 
 	-- Unload data when player leaves
 	Players.PlayerRemoving:Connect(function(player)
-		playerStore:unload(player)
+		playerStore:unloadAsync(player)
 	end)
 	```
 
 	@class PlayerStore
 ]=]
+
+local Players = game:GetService("Players")
+
+local Log = require(script.Parent.Log)
+local Promise = require(script.Parent.Promise)
+local Store = require(script.Parent.Store)
+local Types = require(script.Parent.Types)
 
 type PlayerStoreImpl<T> = {
 	__index: PlayerStoreImpl<T>,
@@ -51,11 +48,21 @@ type PlayerStoreImpl<T> = {
 		player: Player,
 		transformFunction: (data: T) -> boolean
 	) -> Promise.TPromise<boolean>,
+	updateImmutable: (
+		self: PlayerStore<T>,
+		player: Player,
+		transformFunction: (data: T) -> T | false
+	) -> Promise.TPromise<boolean>,
 	tx: (
 		self: PlayerStore<T>,
 		players: { Player },
 		transformFunction: (state: { [Player]: T }) -> boolean
-	) -> Promise.Promise,
+	) -> Promise.TPromise<boolean>,
+	txImmutable: (
+		self: PlayerStore<T>,
+		players: { Player },
+		transformFunction: (state: { [Player]: T }) -> { [Player]: T } | false
+	) -> Promise.TPromise<boolean>,
 	save: (self: PlayerStore<T>, player: Player) -> Promise.Promise,
 	close: (self: PlayerStore<T>) -> Promise.Promise,
 	peek: (self: PlayerStore<T>, userId: number) -> T,
@@ -64,11 +71,21 @@ type PlayerStoreImpl<T> = {
 	loadAsync: (self: PlayerStore<T>, player: Player) -> (),
 	unloadAsync: (self: PlayerStore<T>, player: Player) -> (),
 	updateAsync: (self: PlayerStore<T>, player: Player, transformFunction: (data: T) -> boolean) -> boolean,
+	updateImmutableAsync: (
+		self: PlayerStore<T>,
+		player: Player,
+		transformFunction: (data: T) -> T | false
+	) -> boolean,
 	txAsync: (
 		self: PlayerStore<T>,
 		players: { Player },
 		transformFunction: (state: { [Player]: T }) -> boolean
 	) -> (),
+	txImmutableAsync: (
+		self: PlayerStore<T>,
+		players: { Player },
+		transformFunction: (state: { [Player]: T }) -> { [Player]: T } | false
+	) -> boolean,
 	saveAsync: (self: PlayerStore<T>, player: Player) -> (),
 	closeAsync: (self: PlayerStore<T>) -> (),
 	peekAsync: (self: PlayerStore<T>, userId: number) -> T,
@@ -87,7 +104,7 @@ type PlayerStoreProps<T> = {
 	.schema (value: any) -> (boolean, string?) -- A function to validate data
 	.migrationSteps { MigrationStep }? -- Optional migration steps
 	.importLegacyData ((key: string) -> any?)? -- Optional function to import legacy data
-	.changedCallbacks { (key: string, newData: T, oldData: T?) -> () -> () }? -- Optional callbacks for data changes
+	.changedCallbacks { (key: string, newData: T, oldData: T?) -> () }? -- Optional callbacks for data changes
 	.logCallback ((logMessage: LogMessage) -> ())? -- Optional callback for log messages
 	.memoryStoreService MemoryStoreService? -- Optional MemoryStoreService instance for mocking
 	.dataStoreService DataStoreService? -- Optional DataStoreService instance for mocking
@@ -100,9 +117,8 @@ type PlayerStoreConfig<T> = {
 	schema: (value: any) -> (boolean, string?),
 	migrationSteps: { Types.MigrationStep }?,
 	importLegacyData: ((key: string) -> any?)?,
-	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () }?,
-	logCallback: ((logMessage: Types.LogMessage) -> ())?,
-	disableReferenceProtection: boolean?,
+	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () }?,
+	logCallback: ((logMessage: Log.LogMessage) -> ())?,
 	memoryStoreService: MemoryStoreService?,
 	dataStoreService: DataStoreService?,
 }
@@ -144,7 +160,6 @@ PlayerStore.__index = PlayerStore
 	@param config PlayerStoreConfig<T> -- Configuration for the store
 	@return PlayerStore<T>
 	@within PlayerStore
-	@function create
 ]=]
 local function createPlayerStore<T>(config: PlayerStoreConfig<T>): PlayerStore<T>
 	local self: PlayerStore<T>
@@ -162,7 +177,6 @@ local function createPlayerStore<T>(config: PlayerStoreConfig<T>): PlayerStore<T
 		end,
 		memoryStoreService = config.memoryStoreService,
 		dataStoreService = config.dataStoreService,
-		disableReferenceProtection = config.disableReferenceProtection,
 	}
 
 	local store = Store.createStore(storeConfig)
@@ -210,6 +224,7 @@ end
 	Syntactic sugar for `playerStore:get(player):expect()`.
 
 	See [PlayerStore:get]
+	@yields
 ]=]
 function PlayerStore:getAsync(player: Player)
 	return self:get(player):expect()
@@ -245,6 +260,7 @@ end
 	Syntactic sugar for `playerStore:load(player):expect()`.
 
 	See [PlayerStore:load]
+	@yields
 ]=]
 function PlayerStore:loadAsync(player: Player)
 	return self:load(player):expect()
@@ -272,6 +288,7 @@ end
 	Syntactic sugar for `playerStore:unload(player):expect()`.
 
 	See [PlayerStore:unload]
+	@yields
 ]=]
 function PlayerStore:unloadAsync(player: Player)
 	return self:unload(player):expect()
@@ -306,9 +323,47 @@ end
 	Syntactic sugar for `playerStore:update(player, transformFunction):expect()`.
 
 	See [PlayerStore:update]
+	@yields
 ]=]
 function PlayerStore:updateAsync<T>(player: Player, transformFunction: (data: T) -> boolean)
 	return self:update(player, transformFunction):expect()
+end
+
+--[=[
+	Updates data for the given player using a transform function that does not mutate the original data.
+	The transform function must return the new data or false to abort.
+
+	```lua
+	playerStore:updateImmutable(player, function(data)
+		if data.coins < 100 then
+			return { coins = data.coins + 50 } -- Return new data to commit changes
+		end
+		return false -- Don't commit changes
+	end)
+	```
+
+	@error "Key not loaded" -- The player's data hasn't been loaded
+	@error "Store is closed" -- The store has been closed
+	@error "Schema validation failed" -- The transformed data failed schema validation
+	@return Promise -- Resolves when the update is complete
+	@within PlayerStore
+]=]
+function PlayerStore:updateImmutable<T>(
+	player: Player,
+	transformFunction: (data: T) -> T | false
+): Promise.TPromise<boolean>
+	local userIdKey = getUserIdKey(player)
+	return self._store:updateImmutable(userIdKey, transformFunction)
+end
+
+--[=[
+	Syntactic sugar for `playerStore:updateImmutable(player, transformFunction):expect()`.
+
+	See [PlayerStore:updateImmutable]
+	@yields
+]=]
+function PlayerStore:updateImmutableAsync<T>(player: Player, transformFunction: (data: T) -> T | false)
+	return self:updateImmutable(player, transformFunction):expect()
 end
 
 --[=[
@@ -330,10 +385,13 @@ end
 	@error "Key not loaded" -- One or more players' data hasn't been loaded
 	@error "Store is closed" -- The store has been closed
 	@error "Schema validation failed" -- The transformed data failed schema validation
-	@return Promise -- Resolves when the transaction is complete
+	@return Promise -- Resolves with `true` if the transaction was successful, or `false` if it was aborted. Rejects on error.
 	@within PlayerStore
 ]=]
-function PlayerStore:tx<T>(players: { Player }, transformFunction: (state: { [Player]: T }) -> boolean)
+function PlayerStore:tx<T>(
+	players: { Player },
+	transformFunction: (state: { [Player]: T }) -> boolean
+): Promise.TPromise<boolean>
 	local userIdKeys = table.create(#players)
 	local userIdKeyToPlayer = {}
 	for i, player in players do
@@ -373,9 +431,85 @@ end
 	Syntactic sugar for `playerStore:tx(players, transformFunction):expect()`.
 
 	See [PlayerStore:tx]
+	@yields
 ]=]
 function PlayerStore:txAsync<T>(players: { Player }, transformFunction: (state: { [Player]: T }) -> boolean)
 	return self:tx(players, transformFunction):expect()
+end
+
+--[=[
+	Performs a transaction across multiple players' data atomically using immutable updates.
+	All players' data must be loaded first. Either all changes apply or none do.
+
+	```lua
+	playerStore:txImmutable({player1, player2}, function(state)
+		-- Transfer coins between players
+		if state[player1].coins >= 100 then
+			return {
+				[player1] = { coins = state[player1].coins - 100 },
+				[player2] = { coins = state[player2].coins + 100 },
+			} -- Commit transaction with new data
+		end
+		return false -- Abort transaction
+	end)
+	```
+
+	@error "Key not loaded" -- One or more players' data hasn't been loaded
+	@error "Store is closed" -- The store has been closed
+	@error "Schema validation failed" -- The transformed data failed schema validation
+	@return Promise -- Resolves with `true` if the transaction was successful, or `false` if it was aborted. Rejects on error.
+	@within PlayerStore
+]=]
+function PlayerStore:txImmutable<T>(
+	players: { Player },
+	transformFunction: (state: { [Player]: T }) -> { [Player]: T } | false
+): Promise.TPromise<boolean>
+	local userIdKeys = table.create(#players)
+	local userIdKeyToPlayer = {}
+	for i, player in players do
+		local key = getUserIdKey(player)
+		userIdKeys[i] = key
+		userIdKeyToPlayer[key] = player
+	end
+
+	local function wrapped(state: { [string]: any }): { [string]: any } | false
+		local userIdState = {}
+		for key, value in state do
+			local player = userIdKeyToPlayer[key]
+			userIdState[player] = value
+		end
+
+		local newData = transformFunction(userIdState)
+		if newData == false then
+			return false
+		end
+
+		for key in state do
+			state[key] = nil
+		end
+
+		for playerVariant, value in newData :: { [Player]: T } do
+			local stringKey = getUserIdKey(playerVariant)
+			state[stringKey] = value
+		end
+
+		return state
+	end
+
+	return self._store:txImmutable(userIdKeys, wrapped)
+end
+
+--[=[
+	Syntactic sugar for `playerStore:txImmutable(players, transformFunction):expect()`.
+
+	See [PlayerStore:txImmutable]
+	@yields
+]=]
+function PlayerStore:txImmutableAsync<T>(
+	players: { Player },
+	transformFunction: (state: { [Player]: T }) -> { [Player]: T } | false
+)
+	return self:txImmutable(players, transformFunction):expect()
 end
 
 --[=[
@@ -399,6 +533,7 @@ end
 	Syntactic sugar for `playerStore:save(player):expect()`.
 
 	See [PlayerStore:save]
+	@yields
 ]=]
 function PlayerStore:saveAsync(player: Player)
 	return self:save(player):expect()
@@ -419,6 +554,7 @@ end
 	Syntactic sugar for `playerStore:close():expect()`.
 
 	See [PlayerStore:close]
+	@yields
 ]=]
 function PlayerStore:closeAsync()
 	return self:close():expect()
@@ -445,6 +581,7 @@ end
 	Syntactic sugar for `playerStore:peek(userId):expect()`.
 
 	See [PlayerStore:peek]
+	@yields
 ]=]
 function PlayerStore:peekAsync(userId: number)
 	return self:peek(userId):expect()

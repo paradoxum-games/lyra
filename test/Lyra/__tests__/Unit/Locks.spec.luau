@@ -1,5 +1,3 @@
---!strict
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
@@ -43,7 +41,6 @@ describe("Locks", function()
 		local params = {
 			storeContext = storeContext,
 			key = key or "testKey",
-			acquireAttempts = 3,
 			duration = 30,
 			refreshInterval = 5,
 		}
@@ -75,7 +72,7 @@ describe("Locks", function()
 				for _ = 1, 35 do
 					jest.advanceTimersByTime(1000)
 				end
-				return expect(lock2Promise).rejects.toMatch("lock remained")
+				return expect(lock2Promise).rejects.toMatch("Failed to acquire lock")
 			end)
 
 			it("should allow acquiring the lock after it expires", function()
@@ -212,6 +209,58 @@ describe("Locks", function()
 				jest.advanceTimersByTime(6000)
 				expect(mock).toBeCalledTimes(1)
 			end)
+
+			it("should transition status to released and call onLockLost when lock expires via timer", function()
+				local lock = getLock("testKey", { duration = 5, refreshInterval = 20 }) -- Long refresh interval to ensure timer expiry happens first
+				local mock, fn = jest.fn()
+				lock.onLockLost(fn)
+
+				-- Track UpdateAsync calls to ensure refresh stops
+				local refreshCount = 0
+				local updateMock, realUpdate = MockMemoryStoreService.mockHashMapMethod(mockMemory, "UpdateAsync", jest)
+				updateMock.mockImplementation(function(...)
+					refreshCount += 1
+					return realUpdate(...)
+				end)
+
+				-- Advance time just past the duration
+				jest.advanceTimersByTime(5000 + 100) -- 5s duration + small buffer
+
+				-- Check callback and status
+				expect(mock).toBeCalledTimes(1)
+				expect(lock.isLocked()).toBe(false)
+
+				-- Ensure no more refreshes happen after expiry
+				local countAfterExpiry = refreshCount
+				jest.advanceTimersByTime(30000) -- Advance well past potential refresh interval
+				expect(refreshCount).toBe(countAfterExpiry)
+			end)
+
+			it("should transition status to released and call onLockLost when refresh fails", function()
+				local lock = getLock("testKey", { duration = 10, refreshInterval = 2 })
+				local mock, fn = jest.fn()
+				lock.onLockLost(fn)
+
+				-- Mock UpdateAsync to fail on the *first refresh attempt*
+				local refreshAttempt = 0
+				local updateMock = MockMemoryStoreService.mockHashMapMethod(mockMemory, "UpdateAsync", jest)
+				updateMock.mockImplementation(function(...)
+					refreshAttempt += 1
+					return Promise.resolve(nil) -- Simulate lock taken by another
+				end)
+
+				-- Advance time to trigger the first refresh
+				jest.advanceTimersByTime(2000 + 100) -- 2s refresh interval + small buffer
+
+				-- Check callback and status due to refresh failure
+				expect(mock).toBeCalledTimes(1)
+				expect(lock.isLocked()).toBe(false)
+
+				-- Ensure no more refreshes happen after failure
+				local countAfterFailure = refreshAttempt
+				jest.advanceTimersByTime(30000) -- Advance well past potential refresh interval
+				expect(refreshAttempt).toBe(countAfterFailure)
+			end)
 		end)
 
 		describe("error handling", function()
@@ -223,7 +272,7 @@ describe("Locks", function()
 					jest.advanceTimersByTime(50000)
 				end
 
-				return expect(promise).rejects.toMatch("lock remained")
+				return expect(promise).rejects.toMatch("Failed to acquire lock")
 			end)
 
 			it("should clean up resources if cancelled during acquisition", function()

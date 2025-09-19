@@ -1,5 +1,3 @@
---!strict
-
 --[[
 	Calls a function and throws an error if it attempts to yield.
 

@@ -1,5 +1,3 @@
---!strict
-
 local Tables = require(script.Parent.Tables)
 local Types = require(script.Parent.Types)
 
