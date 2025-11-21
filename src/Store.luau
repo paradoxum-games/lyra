@@ -105,6 +105,7 @@ export type StoreConfig<T> = {
 	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () }?,
 	logCallback: ((logMessage: Log.LogMessage) -> ())?,
 	onLockLost: ((key: string) -> ())?,
+	useDSSLocking: boolean?,
 	useMock: boolean?,
 }
 local storeConfigCheck = t.strictInterface({
@@ -121,6 +122,7 @@ local storeConfigCheck = t.strictInterface({
 	changedCallbacks = t.optional(t.array(t.callback)),
 	logCallback = t.optional(t.callback),
 	onLockLost = t.optional(t.callback),
+	useDSSLocking = t.optional(t.boolean),
 	useMock = t.optional(t.boolean),
 })
 
@@ -269,12 +271,15 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		changedCallbacks = config.changedCallbacks or {},
 		logger = logger,
 		onLockLost = config.onLockLost,
+		useDSSLocking = config.useDSSLocking == true,
 
 		-- Get specific DataStore/MemoryStore instances using derived names/scopes.
 		recordStore = dataStoreService:GetDataStore(`{Constants.RECORD_SCOPE}/{config.name}`),
 		shardStore = dataStoreService:GetDataStore(`{Constants.SHARD_SCOPE}/{config.name}`),
 		txStore = dataStoreService:GetDataStore(`{Constants.TX_SCOPE}/{config.name}`),
-		lockHashMap = memoryStoreService:GetHashMap(`{Constants.LOCK_SCOPE}/{config.name}`),
+		lockHashMap = if config.useDSSLocking
+			then dataStoreService:GetDataStore(`{Constants.LOCK_SCOPE}/{config.name}`)
+			else memoryStoreService:GetHashMap(`{Constants.LOCK_SCOPE}/{config.name}`),
 	}
 
 	-- Validate that the provided template data conforms to the schema.

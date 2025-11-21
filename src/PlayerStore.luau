@@ -114,6 +114,7 @@ type PlayerStoreProps<T> = {
 type PlayerStoreConfig<T> = {
 	name: string,
 	template: T,
+	useDSSLocking: boolean?,
 	schema: (value: any) -> (boolean, string?),
 	migrationSteps: { Types.MigrationStep }?,
 	importLegacyData: ((key: string) -> any?)?,
@@ -168,6 +169,7 @@ local function createPlayerStore<T>(config: PlayerStoreConfig<T>): PlayerStore<T
 		name = config.name,
 		template = config.template,
 		schema = config.schema,
+		useDSSLocking = config.useDSSLocking,
 		migrationSteps = config.migrationSteps,
 		importLegacyData = config.importLegacyData,
 		changedCallbacks = config.changedCallbacks,

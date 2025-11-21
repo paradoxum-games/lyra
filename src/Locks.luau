@@ -17,6 +17,7 @@
 ]=]
 
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 
 -- Small buffer subtracted from the TTL when calculating the local expiry time.
 -- This helps account for potential clock skew or network latency, reducing the
@@ -26,7 +27,13 @@ local LOCK_TTL_ERROR_MARGIN_SECS = 0.2
 
 local Types = require(script.Parent.Types)
 local Promise = require(script.Parent.Promise)
+local Constants = require(script.Parent.Constants)
+
+local dataStoreRetry = require(script.Parent.dataStoreRetry)
 local hashMapRetry = require(script.Parent.hashMapRetry)
+
+-- Conditional flag to determine if running in Studio environment.
+local isStudio = RunService:IsStudio()
 
 --[=[
 	Possible states of the lock acquisition and holding process.
@@ -149,19 +156,49 @@ local function acquireLock(params: AcquireLockParams): Promise.TPromise<LockHand
 		logger:log("trace", `attempting UpdateAsync on key '{key}' with ttl {ttl}`)
 
 		-- Transform function for atomic update
-		local function transformFunction(otherLockId: string?): string?
+		local function transformFunction(otherLockId: string?, _lastLockInfo: DataStoreKeyInfo?): string?
+			if ctx.useDSSLocking and _lastLockInfo then
+				local lockAge = os.time() - (_lastLockInfo.UpdatedTime / 1000)
+
+				if lockAge >= params.duration then
+					otherLockId = nil
+				end
+			end
+
+			if isStudio then
+				-- In Studio, ignore existing locks to facilitate testing.
+				otherLockId = nil
+			end
+
 			if otherLockId == nil or otherLockId == lockId then
 				-- Key is empty or already held by us, allow update/acquisition.
 				return lockId
 			end
+
 			-- Key is held by someone else, prevent update. UpdateAsync returns nil.
 			return nil
 		end
 
 		-- Wrap the MemoryStore call in retry logic
-		local retryHandle = hashMapRetry(function()
-			return ctx.lockHashMap:UpdateAsync(key, transformFunction, ttl)
-		end)
+		local retryHandle: Types.RetryHandle<Promise.TPromise<any>>
+
+		if ctx.useDSSLocking then
+			local retryPromise = dataStoreRetry(function()
+				if ttl == 0 then
+					(ctx.lockHashMap :: DataStore):RemoveAsync(key)
+					return lockId
+				end
+
+				local value = (ctx.lockHashMap :: DataStore):UpdateAsync(key, transformFunction)
+				return value
+			end)
+
+			retryHandle = { promise = retryPromise, cancel = function() end }
+		else
+			retryHandle = hashMapRetry(function()
+				return (ctx.lockHashMap :: MemoryStoreHashMap):UpdateAsync(key, transformFunction, ttl)
+			end)
+		end
 
 		-- Side effects on successful update
 		retryHandle.promise:tap(function(value)
@@ -465,13 +502,26 @@ local function probeLockActive(params: ProbeLockActiveParams): Promise.TPromise<
 
 	logger:log("trace", "probing if lock is active via GetAsync")
 
-	-- Use GetAsync wrapped in retry logic.
-	local retryHandle = hashMapRetry(function()
-		return ctx.lockHashMap:GetAsync(key)
-	end)
+	local retryPromise: Promise.TPromise<any>
+
+	if ctx.useDSSLocking then
+		retryPromise = dataStoreRetry(function()
+			local value, keyInfo = (ctx.lockHashMap :: DataStore):GetAsync(key)
+
+			if keyInfo and (os.time() - keyInfo.UpdatedTime / 1000) >= Constants.LOCK_DURATION_SECONDS then
+				value = nil
+			end
+
+			return value
+		end)
+	else
+		retryPromise = hashMapRetry(function()
+			return (ctx.lockHashMap :: MemoryStoreHashMap):GetAsync(key)
+		end).promise
+	end
 
 	-- Check if the GetAsync call returned a value (meaning the key exists).
-	return retryHandle.promise:andThen(function(value)
+	return retryPromise:andThen(function(value)
 		local isActive = value ~= nil
 		logger:log("trace", `probe result: {isActive}`)
 		return isActive
