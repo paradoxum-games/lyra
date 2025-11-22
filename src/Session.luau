@@ -591,6 +591,13 @@ function Session:orphanFile(file: Types.File): ()
 	end
 	local logger = self.ctx.logger:extend({ method = "orphanFile", key = self.key, shard = file.shard })
 
+	for _, existingFile in self.orphanedFiles do
+		if Tables.equalsDeep(file, existingFile) then
+			logger:log("trace", "file already in orphaned list, skipping", { file = file })
+			return
+		end
+	end
+
 	logger:log("trace", "adding file to orphaned list", { file = file })
 	-- Add to list immediately so `writeRecord` includes it if it runs concurrently.
 	table.insert(self.orphanedFiles, file)
