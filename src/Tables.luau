@@ -98,6 +98,7 @@ local function equalsDeep(a: { [any]: any }, b: { [any]: any }): boolean
 	return true
 end
 
+-- POTENTIALLY UNSAFE: If the original, unmodified data isn't ensured to be completely frozen, non-frozen tables within frozen tables won't be able to be detected as changed, be it user intention or error.
 local function immutableEqualsDeep(a: { [any]: any }, b: { [any]: any }): boolean
 	if typeof(a) ~= "table" or typeof(b) ~= "table" then
 		return a == b

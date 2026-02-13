@@ -1024,6 +1024,7 @@ local function updateInternal(
 
 		-- Check if the data actually changed
 		-- We probably don't want to use Tables.equalsDeep if we're not in an immutable context
+		-- POTENTIALLY UNSAFE: See function doc comment for Tables.immutableEqualsDeep
 		if
 		    (immutable and Tables.immutableEqualsDeep(nextData :: any, currentData :: any))
 			or (immutable == false and Tables.equalsDeep(nextData :: any, currentData :: any))
