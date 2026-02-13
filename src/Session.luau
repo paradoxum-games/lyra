@@ -1008,12 +1008,22 @@ local function updateInternal(
 		end
 
 		-- Ensure the new data is frozen
-		Tables.freezeDeep(nextData :: any)
+		if immutable then
+		    -- POTENTIALLY UNSAFE: Assume that if a table is frozen, all tables underneath it are also frozen.
+    		-- This improves performance for immutable updates at the cost of potentially not freezing some tables, be it user intention or error.
+		    Tables.refreezeDeep(nextData :: any)
+		else
+		    Tables.freezeDeep(nextData :: any)
+		end
 
 		-- Check if the data actually changed
-		if Tables.equalsDeep(nextData :: any, currentData :: any) then
-			logger:log("trace", "transform resulted in no data change, resolving true")
-			return resolve(true) -- Considered successful, but data remains same
+		-- We probably don't want to use Tables.equalsDeep if we're not in an immutable context
+		if
+		    (immutable and Tables.immutableEqualsDeep(nextData :: any, currentData :: any))
+			or (immutable == false and Tables.equalsDeep(nextData :: any, currentData :: any))
+		then
+    		logger:log("trace", "transform resulted in no data change, resolving true")
+    		return resolve(true) -- Considered successful, but data remains same
 		end
 
 		if immutable == false then

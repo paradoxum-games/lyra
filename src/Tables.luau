@@ -98,6 +98,30 @@ local function equalsDeep(a: { [any]: any }, b: { [any]: any }): boolean
 	return true
 end
 
+local function immutableEqualsDeep(a: { [any]: any }, b: { [any]: any }): boolean
+	if typeof(a) ~= "table" or typeof(b) ~= "table" then
+		return a == b
+	end
+	
+	if table.isfrozen(a) or table.isfrozen(b) then
+	    return a == b
+	end
+
+	for key, value in a do
+		if not equalsDeep(value, b[key]) then
+			return false
+		end
+	end
+
+	for key, value in b do
+		if not equalsDeep(value, a[key]) then
+			return false
+		end
+	end
+
+	return true
+end
+
 local function freezeDeep<T>(t: T): ()
 	if typeof(t) ~= "table" then
 		return
@@ -112,6 +136,22 @@ local function freezeDeep<T>(t: T): ()
 			freezeDeep(value)
 		end
 	end
+end
+
+local function refreezeDeep<T>(t: T): ()
+    if typeof(t) ~= "table" then
+        return
+    end
+    
+    if table.isfrozen(t) == true then
+        return
+    end
+    
+    table.freeze(t)
+    
+    for _, value in t :: any do
+        refreezeDeep(value)
+    end
 end
 
 -- Performs a deep reconciliation of a target table with a source table,
@@ -223,7 +263,9 @@ return {
 	mergeDeep = mergeDeep,
 	mergeShallow = mergeShallow,
 	equalsDeep = equalsDeep,
+	immutableEqualsDeep = immutableEqualsDeep,
 	freezeDeep = freezeDeep,
+	refreezeDeep = refreezeDeep,
 	map = map,
 	reconcileDeep = reconcileDeep,
 }
