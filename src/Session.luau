@@ -61,8 +61,8 @@ local noYield = require(script.Parent.noYield)
 	.isSaved (self: Session<T>) -> boolean
 
 	-- Internal state mutation
-	.setData (self: Session<T>, data: T) -> ()
-	.mutateKey (self: Session<T>, newData: T) -> ()
+	.setData (self: Session<T>, data: T, immutableUpdate: boolean?) -> ()
+	.mutateKey (self: Session<T>, newData: T, immutableUpdate: boolean?) -> ()
 
 	-- Autosave management
 	.startAutosaving (self: Session<T>) -> ()
@@ -81,8 +81,8 @@ type SessionImpl<T> = {
 	orphanFile: (self: Session<T>, file: Types.File) -> (),
 	writeRecord: (self: Session<T>, txInfo: Types.TxInfo) -> Promise.TPromise<any>,
 	isSaved: (self: Session<T>) -> boolean,
-	setData: (self: Session<T>, data: T) -> (),
-	mutateKey: (self: Session<T>, newData: T) -> (),
+	setData: (self: Session<T>, data: T, immutableUpdate: boolean?) -> (),
+	mutateKey: (self: Session<T>, newData: T, immutableUpdate: boolean?) -> (),
 	startAutosaving: (self: Session<T>) -> (),
 	stopAutosaving: (self: Session<T>) -> (),
 	unload: (self: Session<T>) -> Promise.Promise,
@@ -778,13 +778,19 @@ end
 	@within Session
 	@private
 	@param data any -- The new data value.
+	@param immutableUpdate boolean? -- Whether this originates from an immutable data update. This triggers a faster freeze function.
 ]=]
-function Session:setData(data: any): ()
+function Session:setData(data: any, immutableUpdate: boolean?): ()
 	-- Generate a unique ID for this mutation and add it to the changeSet.
 	local mutationId = HttpService:GenerateGUID(false)
 	self.changeSet[mutationId] = true
-	-- Freeze and update the data reference.
-	Tables.freezeDeep(data)
+	-- Make sure the data is frozen and update the data reference.
+	if immutableUpdate == true then
+	    -- POTENTIALLY UNSAFE: See function doc comment
+	    Tables.ensureFrozen(data)
+	else
+	    Tables.freezeDeep(data)
+	end
 	self.data = data
 end
 
@@ -795,12 +801,13 @@ end
 	@within Session
 	@private
 	@param newData any -- The new data value.
+	@param immutableUpdate boolean? -- Whether this originates from an immutable data update. This triggers a faster freeze function.
 ]=]
-function Session:mutateKey(newData: any): ()
+function Session:mutateKey(newData: any, immutableUpdate: boolean?): ()
 	local oldData = self.data -- Store reference to previous data
 
 	-- Update internal data (sets .data and marks changeSet)
-	self:setData(newData)
+	self:setData(newData, immutableUpdate)
 
 	-- Trigger change callbacks asynchronously
 	for _, callback in self.ctx.changedCallbacks do
@@ -1009,9 +1016,8 @@ local function updateInternal(
 
 		-- Ensure the new data is frozen
 		if immutable then
-		    -- POTENTIALLY UNSAFE: Assume that if a table is frozen, all tables underneath it are also frozen.
-    		-- This improves performance for immutable updates at the cost of potentially not freezing some tables, be it user intention or error.
-		    Tables.refreezeDeep(nextData :: any)
+		    -- POTENTIALLY UNSAFE: See function doc comment
+		    Tables.ensureFrozen(nextData :: any)
 		else
 		    Tables.freezeDeep(nextData :: any)
 		end
@@ -1031,7 +1037,7 @@ local function updateInternal(
 		end
 
 		-- Data changed and is valid, apply the mutation
-		self:mutateKey(nextData)
+		self:mutateKey(nextData, immutable)
 
 		logger:log("trace", "update applied successfully")
 

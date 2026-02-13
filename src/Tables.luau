@@ -138,7 +138,9 @@ local function freezeDeep<T>(t: T): ()
 	end
 end
 
-local function refreezeDeep<T>(t: T): ()
+--- POTENTIALLY UNSAFE: Assume that if a table is frozen, all tables underneath it are also frozen.
+--- This improves performance for immutable updates at the cost of potentially not freezing some tables, be it user intention or error.
+local function ensureFrozen<T>(t: T): ()
     if typeof(t) ~= "table" then
         return
     end
@@ -150,7 +152,7 @@ local function refreezeDeep<T>(t: T): ()
     table.freeze(t)
     
     for _, value in t :: any do
-        refreezeDeep(value)
+        ensureFrozen(value)
     end
 end
 
@@ -265,7 +267,7 @@ return {
 	equalsDeep = equalsDeep,
 	immutableEqualsDeep = immutableEqualsDeep,
 	freezeDeep = freezeDeep,
-	refreezeDeep = refreezeDeep,
+	ensureFrozen = ensureFrozen,
 	map = map,
 	reconcileDeep = reconcileDeep,
 }
