@@ -196,9 +196,12 @@ function PlayerStore:_kickPlayer(keyOrPlayer: string | Player, message: string):
 	if typeof(keyOrPlayer) ~= "string" then
 		keyOrPlayer:Kick(message)
 	else
-		local player = Players:GetPlayerByUserId(tonumber(keyOrPlayer))
-		if player ~= nil then
-			player:Kick(message)
+		local userId = tonumber(keyOrPlayer)
+		if userId ~= nil then
+			local player = Players:GetPlayerByUserId(userId)
+			if player ~= nil then
+				player:Kick(message)
+			end
 		end
 	end
 end
@@ -394,8 +397,8 @@ function PlayerStore:tx<T>(
 	players: { Player },
 	transformFunction: (state: { [Player]: T }) -> boolean
 ): Promise.TPromise<boolean>
-	local userIdKeys = table.create(#players)
-	local userIdKeyToPlayer = {}
+	local userIdKeys = table.create(#players) :: { string }
+	local userIdKeyToPlayer: { [string]: Player } = {}
 	for i, player in players do
 		local key = getUserIdKey(player)
 		userIdKeys[i] = key
@@ -403,7 +406,7 @@ function PlayerStore:tx<T>(
 	end
 
 	local function wrapped(state: { [string]: any }): boolean
-		local userIdState = {}
+		local userIdState: { [Player]: T } = {}
 		for key, value in state do
 			local player = userIdKeyToPlayer[key]
 			userIdState[player] = value
@@ -435,7 +438,7 @@ end
 	See [PlayerStore:tx]
 	@yields
 ]=]
-function PlayerStore:txAsync<T>(players: { Player }, transformFunction: (state: { [Player]: T }) -> boolean)
+function PlayerStore:txAsync<T>(players: { Player }, transformFunction: (state: { [Player]: T }) -> boolean): boolean
 	return self:tx(players, transformFunction):expect()
 end
 
@@ -466,8 +469,8 @@ function PlayerStore:txImmutable<T>(
 	players: { Player },
 	transformFunction: (state: { [Player]: T }) -> { [Player]: T } | false
 ): Promise.TPromise<boolean>
-	local userIdKeys = table.create(#players)
-	local userIdKeyToPlayer = {}
+	local userIdKeys = table.create(#players) :: { string }
+	local userIdKeyToPlayer: { [string]: Player } = {}
 	for i, player in players do
 		local key = getUserIdKey(player)
 		userIdKeys[i] = key
@@ -475,7 +478,7 @@ function PlayerStore:txImmutable<T>(
 	end
 
 	local function wrapped(state: { [string]: any }): { [string]: any } | false
-		local userIdState = {}
+		local userIdState: { [Player]: T } = {}
 		for key, value in state do
 			local player = userIdKeyToPlayer[key]
 			userIdState[player] = value
