@@ -10,7 +10,7 @@ local function copyDeep<T>(t: T): T
 			new[key] = copyDeep(value)
 		elseif typeof(value) == "buffer" then
 			local copy = buffer.create(buffer.len(value))
-			new[key] = buffer.copy(value, 0, copy)
+			new[key] = buffer.copy(copy, 0, value)
 		end
 	end
 
@@ -36,7 +36,7 @@ local function mergeDeep<T>(...: any): T
 				end
 			elseif typeof(value) == "buffer" then
 				local copy = buffer.create(buffer.len(value))
-				result[key] = buffer.copy(value, 0, copy)
+				result[key] = buffer.copy(copy, 0, value)
 			else
 				result[key] = value
 			end
