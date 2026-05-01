@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+* Added `lockShardCount` to `Store.createStore` and `PlayerStore.create` — when set to N >= 2, lock traffic is hash-sharded across N MemoryStore HashMaps instead of routing through one, multiplying the effective partition throughput budget for stores under heavy lock pressure. Defaults to 1 (unchanged behavior, same HashMap name). Ignored when `useDSSLocking` is true. Changing the value across a deploy opens a window up to `LOCK_DURATION_SECONDS` where in-flight locks live under the old namespace.
+
 ## 0.6.0
 * Added `updateImmutable`, `updateImmutableAsync`, `txImmutable`, `txImmutableAsync` APIs
   * This 'immutable' flavor of API lets you avoid deep copying, but forces you to handle copy-on-write semantics yourself. Instead of returning `true` to commit a change, you return a new copy of the data containing the desired changes.

@@ -109,6 +109,7 @@ type PlayerStoreProps<T> = {
 	.memoryStoreService MemoryStoreService? -- Optional MemoryStoreService instance for mocking
 	.dataStoreService DataStoreService? -- Optional DataStoreService instance for mocking
 	.useMock boolean? -- If true (and running in Studio), uses mock in-memory implementations of DataStoreService and MemoryStoreService instead of the actual Roblox services. Useful for testing in a controlled environment. Defaults to `false`.
+	.lockShardCount number? -- Number of MemoryStore HashMaps to spread lock traffic across. Defaults to 1 (no sharding). See `Store.StoreConfig.lockShardCount` for details.
 
 	@within PlayerStore
 ]=]
@@ -124,6 +125,7 @@ type PlayerStoreConfig<T> = {
 	memoryStoreService: MemoryStoreService?,
 	dataStoreService: DataStoreService?,
 	useMock: boolean?,
+	lockShardCount: number?,
 }
 
 type PlayerStore<T> = typeof(setmetatable({} :: PlayerStoreProps<T>, {} :: PlayerStoreImpl<T>))
@@ -182,6 +184,7 @@ local function createPlayerStore<T>(config: PlayerStoreConfig<T>): PlayerStore<T
 		memoryStoreService = config.memoryStoreService,
 		dataStoreService = config.dataStoreService,
 		useMock = config.useMock,
+		lockShardCount = config.lockShardCount,
 	}
 
 	local store = Store.createStore(storeConfig)
