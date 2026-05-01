@@ -6,6 +6,7 @@
 ]=]
 
 local Log = require(script.Parent.Log)
+local ShardedHashMap = require(script.Parent.ShardedHashMap)
 local t = require(script.Parent.Parent.t)
 
 --[=[
@@ -123,7 +124,7 @@ export type MigrationStep = {
 	.recordStore DataStore -- The DataStore used to store `DataStoreRecord` objects.
 	.shardStore DataStore -- The DataStore used to store the actual data shards for large files.
 	.txStore DataStore -- The DataStore used to store transaction status markers (`txId` keys).
-	.lockHashMap MemoryStoreHashMap -- The MemoryStore HashMap used for managing distributed locks.
+	.lockHashMap MemoryStoreHashMap | DataStore | ShardedHashMap -- Storage for distributed locks. One of: a single MemoryStoreHashMap, a DataStore (if `useDSSLocking`), or a ShardedHashMap facade routing across N HashMaps (if `lockShardCount >= 2`).
 ]=]
 export type StoreContext<T> = {
 	name: string,
@@ -144,7 +145,7 @@ export type StoreContext<T> = {
 	recordStore: DataStore,
 	shardStore: DataStore,
 	txStore: DataStore,
-	lockHashMap: DataStore | MemoryStoreHashMap,
+	lockHashMap: DataStore | MemoryStoreHashMap | ShardedHashMap.ShardedHashMap,
 }
 
 -- Validation check for TxInfo structure using 't' library.

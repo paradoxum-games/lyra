@@ -29,6 +29,8 @@ local INTERNAL_SPACE_RESERVE_BYTES = 10_000
 	.LOCK_DURATION_SECONDS number -- The initial time-to-live (TTL) duration (in seconds) for a lock acquired in MemoryStore. If the lock isn't refreshed within this time, it will automatically expire. Must be longer than LOCK_REFRESH_INTERVAL_SECONDS to allow time for refreshes.
 
 	.AUTOSAVE_INTERVAL_SECONDS number -- How often (in seconds) the automatic saving mechanism should attempt to save dirty session data.
+
+	.DEFAULT_LOCK_SHARDS number -- Default number of shards for the MemoryStore lock HashMap. 1 means no sharding (single HashMap, matches pre-sharding behavior).
 ]=]
 local Constants = {
 	RECORD_SCOPE = "lyra/records",
@@ -43,6 +45,8 @@ local Constants = {
 	LOCK_DURATION_SECONDS = 90,
 
 	AUTOSAVE_INTERVAL_SECONDS = 5 * 60, -- 5 minutes
+
+	DEFAULT_LOCK_SHARDS = 1,
 }
 
 return Constants
