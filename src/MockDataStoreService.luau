@@ -330,7 +330,7 @@ function MockDataStore:UpdateAsync(key, transformFunction)
 		local versions = getVersionsForKey(self, key)
 		local currentHour = getUtcHour()
 
-		if #versions == 0 or versions[#versions].CreatedTime ~= currentHour then
+		if #versions == 0 or msToHours(versions[#versions].CreatedTime) ~= currentHour then
 			table.insert(
 				versions,
 				createVersion(newValue, newUserIds or keyInfo:GetUserIds(), newMetadata or keyInfo:GetMetadata())
